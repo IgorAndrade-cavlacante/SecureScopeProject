@@ -22,11 +22,16 @@
      --yellow-hover: #ffc300;
     --text-main: #f5f5f5;
     --text-secondary: #a1a1b5;
+    --bg-rate: url("/images/bgrate.webp");
     --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
 }
 
 body {
-    background-color: var(--very-dark-blue);
+    background: var(--bg-main);
+    background-image: var(--bg-rate);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
     height: 100svh;
     display: flex;
     justify-content: center;
@@ -183,15 +188,15 @@ body {
   width: 81%;
   height: 65px;
 
-  position: relative;
-  top: 585px;
-  left: 902px;
+  position: absolute;
+  top: 40px;
+  left: 910px;
   transform: translateX(-50%);
 
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 60px;
+  gap: 54px;
 
   background: rgba(255,255,255,0.05);
   backdrop-filter: blur(10px);
@@ -204,7 +209,7 @@ body {
 
   color: var(--text-secondary);
   position: relative;
-  right: 125px;
+  right: 105px;
   top: 5px;
   font-size: 1.3rem;
   font-weight: 700;
