@@ -1,0 +1,290 @@
+/* =========================
+   RESET
+========================= */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* =========================
+   ROOT
+========================= */
+
+:root {
+  --bg-main: #0a0a0f;
+
+  --purple-main: #7b2eff;
+  --purple-dark: #4b008f;
+  --purple-light: #b388ff;
+
+  --yellow-main: #ffd60a;
+  --yellow-hover: #ffc300;
+
+  --text-main: #f5f5f5;
+  --text-secondary: #a1a1b5;
+
+  --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
+
+  --bg-home: url("/securescope/assets/images/bghome.webp");
+}
+
+/* =========================
+   BODY
+========================= */
+
+body {
+  font-family: "Inter", sans-serif;
+
+  background: var(--bg-main);
+  background-image: var(--bg-home);
+
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+
+  color: var(--text-main);
+
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.header {
+  width: 100%;
+
+  padding: 25px 8%;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* =========================
+   LOGO
+========================= */
+
+.logo img {
+  width: 130px;
+  margin-left: -120px;
+  display: block;
+  position: relative;
+  top: -20px;
+  z-index: 999;
+}
+
+/* =========================
+   SEARCH
+========================= */
+
+.search {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  top: -13px;;
+  left: 30px;
+  background: rgba(255, 255, 255, 0.05);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  padding: 10px 16px;
+
+  border-radius: 14px;
+  z-index: 999;
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+
+  color: var(--text-main);
+
+  width: 220px;
+  font-size: 15px;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);;
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   NAVBAR
+========================= */
+
+.navbar {
+  width: 80%;
+  position: relative;
+  top: -135px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 60px;
+  backdrop-filter: blur(10px);
+  border-radius: 40px;
+  margin-left: 300px;
+
+  padding: 20px 0;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+ 
+}
+
+.navbar a {
+  text-decoration: none;
+
+  color: var(--text-secondary);
+  position: relative;
+  right: 110px;
+
+  font-size: 1.2rem;
+  font-weight: 500;
+
+  transition: 0.3s ease;
+
+  position: relative;
+}
+
+.navbar a:hover {
+  color: var(--purple-light);
+}
+
+.navbar a::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  bottom: -6px;
+
+  width: 0%;
+  height: 2px;
+
+  background: var(--purple-main);
+
+  transition: 0.3s ease;
+}
+
+.navbar a:hover::after {
+  width: 100%;
+}
+
+/* =========================
+   HERO
+========================= */
+
+.hero {
+  width: 100%;
+
+  padding: 120px 8%;
+}
+
+.hero-text {
+  max-width: 700px;;;
+}
+
+/* TITLE */
+
+.hero-text h1 {
+  font-size: 5rem;
+  line-height: 1;
+  left: -90px;
+  position: relative;
+  top: -190px;;
+
+  font-family: "Orbitron", sans-serif;
+}
+
+.hero-text strong {
+  display: block;
+  position: relative;
+  color: var(--yellow-main);
+  top: 20px;
+}
+
+/* PARAGRAPH */
+
+.hero-text p {
+  color: var(--text-secondary);
+  font-family: "VT323", monospace;
+  font-size: 1.6rem;
+  line-height: 2.9;
+  left:  50px;
+  position: relative;
+  top:-180px;
+
+  margin-bottom: 40px;
+}
+
+/* =========================
+   BUTTONS
+========================= */
+
+.hero-buttons {
+  display: flex;
+  gap: 20px;
+  position: relative;
+  right: -25px;
+  top: -150px;
+}
+
+.btn {
+  border: none;
+  outline: none;
+
+  padding: 16px 30px;
+
+  border-radius: 14px;
+
+  font-size: 1rem;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: 0.3s ease;
+}
+
+/* PRIMARY */
+
+.btn-primary {
+  background: var(--yellow-main);
+  color: #000;
+  font-size: 17px;
+  width: 22%;
+  position: relative;
+  top: -50px
+}
+
+.btn-primary:hover {
+  background: var(--yellow-hover);
+  transform: translateY(-2px);
+}
+
+/* SECONDARY */
+
+.btn-secondary {
+  background: var(--purple-main);
+  color: white;
+  font-size: 17px;
+  width: 22%;
+  position: relative;
+  right: 100px;
+  top: -50px;
+}
+
+.btn-secondary:hover {
+  background: var(--purple-dark);
+  transform: translateY(-2px);
+}

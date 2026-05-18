@@ -1,0 +1,234 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Overpass", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+:root {
+    --dark-blue: #262e38;
+    --light-gray:#969fad;
+    --medium-gray: #7c8798;
+    --orange:#fc7614;
+    --very-dark-blue: #131518;
+    --white:#fff;
+    --black-gradient:radial-gradient(98.96% 98.96% at 50% 0%, #232a34 0%, #181e27 100%);
+    --bg-main: #0a0a0f;
+    --purple-main: #7b2eff;
+    --purple-dark: #4b008f;
+     --purple-light: #b388ff;
+     --yellow-main: #ffd60a;
+     --yellow-hover: #ffc300;
+    --text-main: #f5f5f5;
+    --text-secondary: #a1a1b5;
+    --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
+}
+
+body {
+    background-color: var(--very-dark-blue);
+    height: 100svh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.card {
+    background: var(--black-gradient);
+    max-width: 412px;
+    top: 30px ;
+    padding: 32px;
+    border-radius: 30px;
+    position: relative;
+    right: 150px ;
+
+}
+
+.estrela {
+    background-color: var(--dark-blue);
+    width: 48px;
+    height: 48px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    margin-bottom: 30px;
+}
+
+.card h1 {
+    color: var(--white);
+    font-size: 28px;
+    margin-bottom: 15px;
+}
+
+.card p {
+    color: var(--light-gray);
+    font-size: 15px;
+    line-height: 24px;
+    margin-bottom: 24px;
+}
+
+.botoes {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 32px;
+}
+
+.botoes button {
+    width: 51px;
+    height: 51px;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 24px;
+    border-radius: 50%;
+    border: none;
+    color: var(--medium-gray);
+    background-color: var(--dark-blue);
+
+    transition: all ease-in-out 0.3s;
+}
+
+.botoes button:hover {
+    color: var(--purple-main);
+    background-color: var(--purple-light);
+    cursor: pointer;
+}
+
+.botoes button:focus {
+    color: var(--purple-main);
+    background-color: var(--purple-light);
+}
+
+.card > a {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--white);
+    background: var(--purple-dark);
+    border: 1px solid var(--very-dark-blue);
+    border-radius: 22px;
+    text-align: center;
+    text-decoration: none;
+}
+
+.card > a:hover {
+    color: var(--purple-main);
+    background-color: var(--purple-light);
+    cursor: pointer;
+}
+
+/* =========================
+   LOGO
+========================= */
+
+.logo img {
+  width: 130px;
+  left: -417px;
+  display: block;
+  position: relative;
+  top: -257px;
+  z-index: 999;
+}
+
+/* =========================
+   SEARCH
+========================= */
+
+.search {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  top: -337px;
+  left: 740px;
+  background: rgba(255, 255, 255, 0.05);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  padding: 10px 16px;
+
+  border-radius: 14px;
+  z-index: 999;
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+
+  color: var(--text-main);
+
+  width: 220px;
+  font-size: 15px;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);;
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   NAVBAR
+========================= */
+
+.navbar {
+  width: 81%;
+  height: 65px;
+
+  position: relative;
+  top: 585px;
+  left: 902px;
+  transform: translateX(-50%);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 60px;
+
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(10px);
+
+  border-radius: 40px;
+}
+
+.navbar a {
+  text-decoration: none;
+
+  color: var(--text-secondary);
+  position: relative;
+  right: 125px;
+  top: 5px;
+  font-size: 1.3rem;
+  font-weight: 700;
+
+  transition: 0.3s ease;;
+  position: relative;
+}
+
+.navbar a::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  bottom: -6px;
+
+  width: 0%;
+  height: 2px;
+
+  background: var(--purple-main);
+
+  transition: 0.3s ease;
+}
+
+.navbar a:hover::after {
+  width: 100%;
+}

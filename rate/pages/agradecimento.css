@@ -1,0 +1,73 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Overpass", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+:root {
+     --dark-blue: #262e38;
+    --light-gray:#969fad;
+    --medium-gray: #7c8798;
+    --orange:#fc7614;
+    --very-dark-blue: #131518;
+    --white:#fff;
+    --black-gradient:radial-gradient(98.96% 98.96% at 50% 0%, #232a34 0%, #181e27 100%);
+    --bg-main: #0a0a0f;
+    --purple-main: #7b2eff;
+    --purple-dark: #4b008f;
+     --purple-light: #b388ff;
+     --yellow-main: #ffd60a;
+     --yellow-hover: #ffc300;
+    --text-main: #f5f5f5;
+    --text-secondary: #a1a1b5;
+    --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
+}
+
+body {
+    background-color: var(--very-dark-blue);
+    height: 100svh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.card {
+    background: var(--black-gradient);
+    text-align: center;
+    max-width: 412px;
+    padding: 1px 32px;
+    border-radius: 30px;
+}
+
+.card img {
+    width: 600px;
+    position: relative;
+    top: 20px;
+    right: 115px;
+
+}
+
+.card .paragrafo_nota {
+    background-color: var(--dark-blue);
+    width: fit-content;
+    margin-inline: auto;
+    padding: 4px 18px;
+    border-radius: 22px;
+    font-size: 15px;
+    color: var(--white);
+    margin-bottom: 32px;
+}
+
+.card h1 {
+    color: var(--white);
+    font-size: 28px;
+}
+
+.card p {
+    color: var(--light-gray);
+    font-size: 15px;
+    line-height: 24px;
+    margin-bottom: 24px;
+}
