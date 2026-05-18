@@ -1,103 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Painel de Governança de Risco</title>
+
+    <link rel="stylesheet" href="painel.css" />
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        h1, h2 { color: #2c3e50; }
-        .header-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        
-        /* Estilos do Painel da IA */
-        .painel-ia {
-            background-color: #f4f6f9;
-            border-left: 5px solid #6f42c1;
-            padding: 15px;
-            margin-bottom: 25px;
-            border-radius: 0 8px 8px 0;
-            font-size: 14px;
-        }
-        .painel-ia h3 { margin-top: 0; color: #6f42c1; display: flex; align-items: center; gap: 8px; }
-        .ia-stats { display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
-        .ia-stat-box { background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #ddd; flex: 1; min-width: 150px; text-align: center; }
-        .ia-stat-box strong { display: block; font-size: 18px; color: #2c3e50; margin-top: 5px; }
-
-        /* Estilos da Sugestão da IA no formulário */
-        #ia-sugestao {
-            display: none;
-            grid-column: 1 / -1;
-            background: #e8f0fe;
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid #b6d4fe;
-            margin-bottom: 10px;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .form-group { display: flex; flex-direction: column; }
-        input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #34495e; color: white; }
-        .risco-critico { background-color: #ffcccc !important; }
-        button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-add { background-color: #007bff; color: white; width: 100%; margin-top: 22px; }
-        .btn-gerar { background-color: #17a2b8; color: white; padding: 10px 20px; font-size: 16px; }
-        .btn-todos { background-color: #6c757d; color: white; padding: 10px 20px; font-size: 16px; margin-left: 8px; }
-        .btn-validar { background-color: #28a745; color: white; margin-right: 5px; }
-        .btn-circuit { background-color: #dc3545; color: white; }
-        .btn-ia-aceitar { background-color: #28a745; color: white; }
-        .btn-ia-editar { background-color: #ffc107; color: #333; margin-left: 5px; }
-        
-        #toast {
-            display: none;
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: #2c3e50;
-            color: white;
-            padding: 14px 22px;
-            border-radius: 6px;
-            font-size: 14px;
-            z-index: 999;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        .modo-relatorio { border: 2px solid #17a2b8; border-radius: 6px; }
-        #badge-relatorio { display: none; background: #17a2b8; color: white; padding: 4px 10px; border-radius: 4px; font-size: 13px; margin-left: 10px; }
-        .tabela-vazia { text-align: center; color: #999; padding: 30px; font-style: italic; }
-    </style>
 </head>
 <body>
 
@@ -109,73 +20,153 @@
             <h1 style="margin:0;">Painel de Governança de Risco</h1>
             <span id="badge-relatorio">📄 Modo Relatório</span>
         </div>
+
         <div>
-            <button class="btn-gerar" onclick="gerarRelatorio()">Gerar Relatório PDF</button>
-            <button class="btn-todos" onclick="voltarPadrao()">Ver Todos</button>
+            <button class="btn-gerar" onclick="gerarRelatorio()">
+                Gerar Relatório PDF
+            </button>
+
+            <button class="btn-todos" onclick="voltarPadrao()">
+                Ver Todos
+            </button>
         </div>
     </div>
 
     <div class="painel-ia" id="painel-ia-container">
         <h3>Insights da IA</h3>
-        <div id="ia-loading">Carregando aprendizado do histórico...</div>
+
+        <div id="ia-loading">
+            Carregando aprendizado do histórico...
+        </div>
+
         <div class="ia-stats" id="ia-stats-content" style="display: none;">
             <div class="ia-stat-box">
                 Risco Médio Geral
                 <strong id="ia-risco-medio">--</strong>
             </div>
+
             <div class="ia-stat-box">
                 Melhor / Pior Risco
-                <strong><span id="ia-melhor-risco" style="color: green;">--</span> / <span id="ia-pior-risco" style="color: red;">--</span></strong>
+                <strong>
+                    <span id="ia-melhor-risco" style="color: green;">--</span>
+                    /
+                    <span id="ia-pior-risco" style="color: red;">--</span>
+                </strong>
             </div>
+
             <div class="ia-stat-box" style="flex: 2;">
-                Médias Base (Validadas: <span id="ia-total">0</span>)
+                Médias Base (Validadas:
+                <span id="ia-total">0</span>)
                 <strong style="font-size: 14px;">
-                    Imp: <span id="ia-media-imp">--</span> | 
-                    Freq: <span id="ia-media-freq">--</span> | 
-                    Grav: <span id="ia-media-grav">--</span>
+                    Imp:
+                    <span id="ia-media-imp">--</span>
+                    |
+                    Freq:
+                    <span id="ia-media-freq">--</span>
+                    |
+                    Grav:
+                    <span id="ia-media-grav">--</span>
                 </strong>
             </div>
         </div>
     </div>
 
     <h2>Nova Vulnerabilidade</h2>
+
     <form id="formVuln">
         <div class="form-grid">
-            <div class="form-group" style="grid-column: 1 / -1;">
+
+            <div class="form-group full-width">
                 <label>Nome da Ameaça</label>
-                <input type="text" id="nome" placeholder="Ex: Bypass de autenticação na API" required>
+
+                <input
+                    type="text"
+                    id="nome"
+                    placeholder="Ex: Bypass de autenticação na API"
+                    required
+                />
             </div>
-            
+
             <div id="ia-sugestao">
                 <div style="color: #004085;">
-                    <span style="font-size: 16px;"></span> 
-                    <strong id="ia-categoria-texto">Categoria detectada...</strong>
+                    <strong id="ia-categoria-texto">
+                        Categoria detectada...
+                    </strong>
                 </div>
+
                 <div>
-                    <button type="button" class="btn-ia-aceitar" id="btn-aceitar-ia">✅ Aceitar Valores</button>
-                    <button type="button" class="btn-ia-editar" id="btn-editar-ia">✏️ Ajustar Manualmente</button>
+                    <button
+                        type="button"
+                        class="btn-ia-aceitar"
+                        id="btn-aceitar-ia"
+                    >
+                        ✅ Aceitar Valores
+                    </button>
+
+                    <button
+                        type="button"
+                        class="btn-ia-editar"
+                        id="btn-editar-ia"
+                    >
+                        ✏️ Ajustar Manualmente
+                    </button>
                 </div>
             </div>
 
             <div class="form-group">
                 <label>Impacto (0 a 100)</label>
-                <input type="number" id="impacto" min="0" max="100" step="0.1" required>
+
+                <input
+                    type="number"
+                    id="impacto"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    required
+                />
             </div>
+
             <div class="form-group">
                 <label>Frequência (0 a 100)</label>
-                <input type="number" id="frequencia" min="0" max="100" step="0.1" required>
+
+                <input
+                    type="number"
+                    id="frequencia"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    required
+                />
             </div>
+
             <div class="form-group">
                 <label>Gravidade (0 a 100)</label>
-                <input type="number" id="gravidade" min="0" max="100" step="0.1" required>
+
+                <input
+                    type="number"
+                    id="gravidade"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    required
+                />
             </div>
+
             <div class="form-group">
-                <button type="submit" class="btn-add" id="btnAdicionar">+ Adicionar</button>
+                <button
+                    type="submit"
+                    class="btn-add"
+                    id="btnAdicionar"
+                >
+                    + Adicionar
+                </button>
             </div>
+
         </div>
     </form>
 
     <h2>Vulnerabilidades Registradas</h2>
+
     <table id="tabelaPrincipal">
         <thead>
             <tr>
@@ -188,299 +179,12 @@
                 <th>Ações</th>
             </tr>
         </thead>
+
         <tbody id="tabelaCorpo"></tbody>
     </table>
 </div>
 
-<script>
-    const API_URL = 'http://127.0.0.1:5000';
-    let endpointAtual = '/vulnerabilidades';
-    let timerDigitacao; // Para a IA
-
-    window.onload = () => {
-        carregarVulnerabilidades(endpointAtual);
-        carregarInsightsIA();
-    };
-
-    function mostrarToast(msg, cor = '#2c3e50') {
-        const toast = document.getElementById('toast');
-        toast.textContent = msg;
-        toast.style.background = cor;
-        toast.style.display = 'block';
-        setTimeout(() => { toast.style.display = 'none'; }, 3000);
-    }
-
-    // ==========================================
-    // LÓGICA DA IA 
-    // ==========================================
-    const inputNome = document.getElementById('nome');
-    const inputImpacto = document.getElementById('impacto');
-    const inputFrequencia = document.getElementById('frequencia');
-    const inputGravidade = document.getElementById('gravidade');
-    const divIaSugestao = document.getElementById('ia-sugestao');
-
-    inputNome.addEventListener('input', function() {
-        clearTimeout(timerDigitacao);
-        const nome = inputNome.value.trim();
-        
-        if(nome.length < 4) {
-            divIaSugestao.style.display = 'none';
-            return;
-        }
-
-        timerDigitacao = setTimeout(async () => {
-            try {
-                const res = await fetch(`${API_URL}/ia/sugerir`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nome: nome })
-                });
-                
-                const dados = await res.json();
-                
-                if(dados.categoria !== "Geral/Desconhecida") {
-                    document.getElementById('ia-categoria-texto').innerText = 
-                        `Categoria: ${dados.categoria} (Risk Index: ${dados.risk_index_sugerido})`;
-                    
-                    inputImpacto.value = dados.impacto;
-                    inputFrequencia.value = dados.frequencia;
-                    inputGravidade.value = dados.gravidade;
-                    
-                    divIaSugestao.style.display = 'flex';
-                } else {
-                    divIaSugestao.style.display = 'none';
-                }
-            } catch (error) {
-                console.error("Erro na IA:", error);
-            }
-        }, 800); // 800ms de debounce
-    });
-
-    document.getElementById('btn-aceitar-ia').addEventListener('click', () => {
-        divIaSugestao.style.display = 'none';
-        document.getElementById('btnAdicionar').focus();
-    });
-
-    document.getElementById('btn-editar-ia').addEventListener('click', () => {
-        divIaSugestao.style.display = 'none';
-        inputImpacto.value = '';
-        inputFrequencia.value = '';
-        inputGravidade.value = '';
-        inputImpacto.focus();
-    });
-
-    // ==========================================
-    // LÓGICA DA IA 
-    // ==========================================
-    async function carregarInsightsIA() {
-        try {
-            const res = await fetch(`${API_URL}/ia/insights`);
-            const dados = await res.json();
-            
-            if(dados.status === 'sucesso') {
-                document.getElementById('ia-loading').style.display = 'none';
-                document.getElementById('ia-stats-content').style.display = 'flex';
-                
-                document.getElementById('ia-total').innerText = dados.total_analisado;
-                document.getElementById('ia-risco-medio').innerText = dados.risco_medio_geral;
-                document.getElementById('ia-pior-risco').innerText = dados.pior_risco;
-                document.getElementById('ia-melhor-risco').innerText = dados.melhor_risco;
-                
-                document.getElementById('ia-media-imp').innerText = dados.media_impacto;
-                document.getElementById('ia-media-freq').innerText = dados.media_frequencia;
-                document.getElementById('ia-media-grav').innerText = dados.media_gravidade;
-            } else {
-                document.getElementById('ia-loading').innerText = dados.mensagem || "Sem dados suficientes.";
-            }
-        } catch (error) {
-            document.getElementById('ia-loading').innerText = "Erro ao conectar com módulo de IA.";
-        }
-    }
-
-
-    // ==========================================
-    // FUNÇÕES ORIGINAIS DO CRUD E RELATÓRIO
-    // ==========================================
-    async function carregarVulnerabilidades(endpoint = '/vulnerabilidades') {
-        endpointAtual = endpoint;
-        const response = await fetch(`${API_URL}${endpoint}`);
-        const dados = await response.json();
-        renderizarTabela(dados);
-    }
-
-    function recarregarAtual() {
-        carregarVulnerabilidades(endpointAtual);
-        carregarInsightsIA(); // Atualiza a IA caso tenha validado algo
-    }
-
-    function renderizarTabela(dados) {
-        const tbody = document.getElementById('tabelaCorpo');
-        tbody.innerHTML = '';
-
-        if (dados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="tabela-vazia">Nenhuma vulnerabilidade registrada ainda.</td></tr>';
-            return;
-        }
-
-        dados.forEach(vuln => {
-            const score = parseFloat(vuln.score);
-            const tr = document.createElement('tr');
-
-            if (score > 80) tr.classList.add('risco-critico');
-
-            const isolada = vuln.status === 'Isolada (Circuit Breaker)';
-            const validada = vuln.status === 'Validada';
-
-            tr.innerHTML = `
-                <td>${vuln.nome}</td>
-                <td>${vuln.impacto}</td>
-                <td>${vuln.frequencia}</td>
-                <td>${vuln.gravidade}</td>
-                <td><strong>${score.toFixed(2)}</strong></td>
-                <td>${vuln.status}</td>
-                <td>
-                    <button class="btn-validar"
-                        onclick="validarVuln(${vuln.id})"
-                        ${isolada || validada ? 'disabled' : ''}>
-                        Validar
-                    </button>
-                    <button class="btn-circuit"
-                        onclick="acionarCircuitBreaker(${vuln.id})"
-                        ${isolada ? 'disabled' : ''}>
-                        Circuit Breaker
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    document.getElementById('formVuln').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const btn = document.getElementById('btnAdicionar');
-        btn.disabled = true;
-        btn.textContent = 'Enviando...';
-
-        const payload = {
-            nome: inputNome.value,
-            impacto: parseFloat(inputImpacto.value),
-            frequencia: parseFloat(inputFrequencia.value),
-            gravidade: parseFloat(inputGravidade.value)
-        };
-
-        const res = await fetch(`${API_URL}/vulnerabilidades`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        mostrarToast(`✅ "${payload.nome}" adicionada! Risk Index™: ${data['Risk Index™']}`, '#28a745');
-        
-        document.getElementById('formVuln').reset();
-        divIaSugestao.style.display = 'none'; // Esconde barra da IA ao enviar
-        
-        recarregarAtual();
-
-        btn.disabled = false;
-        btn.textContent = '+ Adicionar';
-    });
-
-    async function validarVuln(id) {
-        await fetch(`${API_URL}/vulnerabilidades/${id}/validar`, { method: 'PUT' });
-        mostrarToast(`✅ Vulnerabilidade #${id} validada!`, '#28a745');
-        recarregarAtual(); 
-    }
-
-    async function acionarCircuitBreaker(id) {
-        if (confirm("ALERTA CRÍTICO: Tem certeza que deseja isolar esta ameaça da rede?")) {
-            await fetch(`${API_URL}/circuit-breaker/${id}`, { method: 'POST' });
-            mostrarToast(`🚨 Circuit Breaker acionado! Ameaça #${id} isolada.`, '#dc3545');
-            recarregarAtual();
-        }
-    }
-
-    async function gerarRelatorio() {
-        document.getElementById('badge-relatorio').style.display = 'inline';
-        document.getElementById('tabelaPrincipal').classList.add('modo-relatorio');
-        mostrarToast('📄 Gerando relatório PDF...', '#17a2b8');
-
-        const response = await fetch(`${API_URL}/relatorio`);
-        const dados = await response.json();
-        renderizarTabela(dados);
-        endpointAtual = '/relatorio';
-
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text('SecureScope — Relatório de Risco', 14, 20);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100);
-        const agora = new Date().toLocaleString('pt-BR');
-        doc.text(`Gerado em: ${agora}`, 14, 28);
-        doc.text(`Total de vulnerabilidades: ${dados.length}`, 14, 34);
-
-        const criticas = dados.filter(v => parseFloat(v.score) > 80).length;
-        const abertas  = dados.filter(v => v.status === 'Aberta').length;
-        const validadas = dados.filter(v => v.status === 'Validada').length;
-        const isoladas  = dados.filter(v => v.status === 'Isolada (Circuit Breaker)').length;
-
-        doc.text(`Críticas (Risk Index™ > 80): ${criticas}`, 14, 40);
-        doc.text(`Abertas: ${abertas}   Validadas: ${validadas}   Isoladas: ${isoladas}`, 14, 46);
-
-        doc.setDrawColor(200);
-        doc.line(14, 50, 196, 50);
-
-        doc.autoTable({
-            startY: 55,
-            head: [['#', 'Nome', 'Impacto', 'Frequência', 'Gravidade', 'Risk Index™', 'Status']],
-            body: dados.map((v, i) => [
-                i + 1,
-                v.nome,
-                v.impacto,
-                v.frequencia,
-                v.gravidade,
-                parseFloat(v.score).toFixed(2),
-                v.status
-            ]),
-            styles: { fontSize: 10, cellPadding: 4 },
-            headStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
-            didParseCell: function(data) {
-                if (data.section === 'body') {
-                    const score = parseFloat(data.row.raw[5]);
-                    if (score > 80) {
-                        data.cell.styles.fillColor = [255, 200, 200];
-                    }
-                }
-            }
-        });
-
-        const totalPaginas = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= totalPaginas; i++) {
-            doc.setPage(i);
-            doc.setFontSize(9);
-            doc.setTextColor(150);
-            doc.text(
-                `SecureScope ASPM — Página ${i} de ${totalPaginas}`,
-                14,
-                doc.internal.pageSize.height - 10
-            );
-        }
-
-        doc.save(`securescope_relatorio_${new Date().toISOString().slice(0,10)}.pdf`);
-        mostrarToast('✅ PDF baixado com sucesso!', '#28a745');
-    }
-
-    function voltarPadrao() {
-        document.getElementById('badge-relatorio').style.display = 'none';
-        document.getElementById('tabelaPrincipal').classList.remove('modo-relatorio');
-        carregarVulnerabilidades('/vulnerabilidades');
-    }
-</script>
+<script src="script.js"></script>
 
 </body>
 </html>
