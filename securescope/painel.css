@@ -95,7 +95,7 @@ h2 {
     background: var(--dark-blue);
     padding: 10px;
     border-radius: 6px;
-    border: 1px solid var(--medium-gray);
+    border: 1px solid var(--purple-dark);
     flex: 1;
     min-width: 150px;
     text-align: center;
@@ -116,7 +116,7 @@ h2 {
     background: var(--dark-blue);
     padding: 12px;
     border-radius: 6px;
-    border: 1px solid #b6d4fe;
+    border: 1px solid var(--purple-light);
     margin-bottom: 10px;
     align-items: center;
     justify-content: space-between;
@@ -153,11 +153,13 @@ table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
+    background-color: var(--dark-blue);
+    color: var(--text-main);
 }
 
 th,
 td {
-    border: 1px solid var(--medium-gray);
+    border: 1px solid var(--purple-light);
     padding: 12px;
     text-align: left;
 }
@@ -168,7 +170,7 @@ th {
 }
 
 .risco-critico {
-    background-color: #ffcccc !important;
+    background-color: var(--purple-main) !important;
 }
 
 .tabela-vazia {
@@ -216,13 +218,13 @@ button:disabled {
 }
 
 .btn-validar {
-    background-color: #28a745;
+    background-color: var(--purple-light);
     color: white;
     margin-right: 5px;
 }
 
 .btn-circuit {
-    background-color: #dc3545;
+    background-color: var(--orange);
     color: white;
 }
 
@@ -244,7 +246,7 @@ button:disabled {
     position: fixed;
     bottom: 30px;
     right: 30px;
-    background: #2c3e50;
+    background: var(--text-main);
     color: white;
     padding: 14px 22px;
     border-radius: 6px;
