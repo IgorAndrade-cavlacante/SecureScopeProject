@@ -45,7 +45,7 @@ body {
     padding: 32px;
     border-radius: 30px;
     position: relative;
-    right: 150px ;
+    right: -450px ;
 
 }
 
@@ -132,10 +132,10 @@ body {
 
 .logo img {
   width: 130px;
-  left: -417px;
+  left: -32px;
   display: block;
   position: relative;
-  top: -257px;
+  top: -365px;
   z-index: 999;
 }
 
@@ -147,8 +147,8 @@ body {
   display: flex;
   gap: 10px;
   position: relative;
-  top: -337px;
-  left: 740px;
+  top: -445px;
+  left: 1449px;
   background: rgba(255, 255, 255, 0.05);
 
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -185,23 +185,21 @@ body {
 ========================= */
 
 .navbar {
-  width: 81%;
-  height: 65px;
-
-  position: absolute;
-  top: 40px;
-  left: 910px;
-  transform: translateX(-50%);
-
+  width: 82%;
+  position: relative;
+  top: -380px;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 54px;
-
-  background: rgba(255,255,255,0.05);
+  gap: 60px;
   backdrop-filter: blur(10px);
-
   border-radius: 40px;
+  margin-left: -480px;
+
+  padding: 20px 0;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .navbar a {

@@ -40,8 +40,12 @@ body {
     padding: 20px;
 }
 
+
+
 .container {
     max-width: 1100px;
+    position: relative;
+    top: -30px;
     margin: 0 auto;
     background: var(--black-gradient);
     padding: 20px;
@@ -270,4 +274,115 @@ button:disabled {
     border-radius: 4px;
     font-size: 13px;
     margin-left: 10px;
+}
+
+/* =========================
+   LOGO
+========================= */
+
+.logo img {
+  width: 130px;
+  left: 12px;
+  display: block;
+  position: relative;
+  top: -14px;
+  z-index: 999;
+}
+
+/* =========================
+   SEARCH
+========================= */
+
+.search {
+  width: 15%;
+  display: flex;
+  gap: 11px;
+  position: relative;
+  top: -94px;
+  left: 1494px;
+  background: rgba(255, 255, 255, 0.05);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  padding: 3px 16px;
+
+  border-radius: 14px;
+  z-index: 999;
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+
+  color: var(--text-main);
+
+  width: 220px;
+  font-size: 15px;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);;
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   NAVBAR
+========================= */
+
+.navbar {
+  width: 82%;
+  position: relative;
+  top: -145px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 60px;
+  backdrop-filter: blur(10px);
+  border-radius: 40px;
+  margin-left: 281px;
+
+  padding: 19px 0;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.navbar a {
+  text-decoration: none;
+
+  color: var(--text-secondary);
+  position: relative;
+  right: 107px;
+  top: -2px;
+  font-size: 1.3rem;
+  font-weight: 400;
+
+  transition: 0.3s ease;;
+  position: relative;
+}
+
+.navbar a::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  bottom: -6px;
+
+  width: 0%;
+  height: 2px;
+
+  background: var(--purple-main);
+
+  transition: 0.3s ease;
+}
+
+.navbar a:hover::after {
+  width: 100%;
 }
