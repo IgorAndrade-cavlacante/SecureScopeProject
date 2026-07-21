@@ -109,6 +109,16 @@
                     <span id="ia-media-grav">--</span>
                 </strong>
             </div>
+
+            <div class="ia-stat-box" style="flex: 2;" id="ia-origens-box">
+                Achados por Origem
+                <strong id="ia-origens-lista" style="font-size: 13px; font-weight: normal;">--</strong>
+            </div>
+        </div>
+
+        <div id="ia-monitoramento" style="display: none;">
+            <strong>🔎 Monitoramento Contínuo (IA proativa)</strong>
+            <ul id="ia-alertas-lista"></ul>
         </div>
     </div>
 
@@ -194,6 +204,49 @@
             </div>
 
             <div class="form-group">
+                <label>Ativo/Sistema Afetado</label>
+
+                <input
+                    type="text"
+                    id="ativo"
+                    placeholder="Ex: API de Pagamentos"
+                />
+            </div>
+
+            <div class="form-group">
+                <label>Origem do Achado</label>
+
+                <select id="origem">
+                    <option value="Manual/Pentest">Manual/Pentest</option>
+                </select>
+            </div>
+
+            <div class="form-group full-width" id="ia-wizard">
+                <label>🤖 Assistente de Contexto da IA</label>
+
+                <div id="wizard-pergunta-area">
+                    <p id="wizard-progresso"></p>
+                    <p id="wizard-pergunta"></p>
+
+                    <div class="wizard-botoes">
+                        <button type="button" id="wizard-sim" class="btn-wizard-sim">Sim</button>
+                        <button type="button" id="wizard-nao" class="btn-wizard-nao">Não</button>
+                    </div>
+
+                    <button type="button" id="wizard-pular" class="btn-wizard-pular">
+                        Pular perguntas
+                    </button>
+                </div>
+
+                <div id="wizard-resumo">
+                    <p id="wizard-resumo-texto"></p>
+                    <button type="button" id="wizard-refazer" class="btn-wizard-pular">
+                        🔁 Refazer perguntas
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
                 <button
                     type="submit"
                     class="btn-add"
@@ -212,10 +265,12 @@
         <thead>
             <tr>
                 <th>Nome</th>
+                <th>Ativo</th>
                 <th>Impacto</th>
                 <th>Frequência</th>
                 <th>Gravidade</th>
                 <th>Risk Index™</th>
+                <th>Prioridade</th>
                 <th>Status</th>
                 <th>Ações</th>
             </tr>
@@ -223,6 +278,25 @@
 
         <tbody id="tabelaCorpo"></tbody>
     </table>
+</div>
+
+<div id="modal-analise-fundo">
+    <div id="modal-analise-conteudo">
+        <button id="btn-fechar-analise" aria-label="Fechar">✖</button>
+
+        <h3 id="analise-titulo">Análise de Risco</h3>
+        <p id="analise-categoria"></p>
+        <p id="analise-ativo-origem"></p>
+
+        <h4>Por que essa prioridade?</h4>
+        <ul id="analise-explicacao"></ul>
+
+        <h4>Score DREAD (framework complementar)</h4>
+        <ul id="analise-dread"></ul>
+
+        <h4>Guia de Remediação</h4>
+        <ol id="analise-guia"></ol>
+    </div>
 </div>
 
 <script src="script.js"></script>

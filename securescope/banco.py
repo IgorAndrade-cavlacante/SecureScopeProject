@@ -50,6 +50,36 @@ def criar_tabelas(conn):
     conn.commit()
     print("Tabelas criadas/verificadas com sucesso.")
 
+# Colunas novas usadas pelo motor de priorização/correlação da IA.
+# ALTER TABLE ... ADD COLUMN é seguro em SQLite e não apaga dados existentes.
+COLUNAS_IA_CONTEXTO = {
+    "exposta_internet":         "INTEGER NOT NULL DEFAULT 0",
+    "exploit_publico":          "INTEGER NOT NULL DEFAULT 0",
+    "dados_sensiveis":          "INTEGER NOT NULL DEFAULT 0",
+    "escalonamento_privilegio": "INTEGER NOT NULL DEFAULT 0",
+    "ambiente_producao":        "INTEGER NOT NULL DEFAULT 0",
+    "categoria":                "TEXT NOT NULL DEFAULT 'Geral/Desconhecida'",
+    "prioridade":                "REAL NOT NULL DEFAULT 0",
+    "explicacao":                "TEXT NOT NULL DEFAULT ''",
+    "origem":                    "TEXT NOT NULL DEFAULT 'Manual/Pentest'",
+    "ativo":                     "TEXT NOT NULL DEFAULT ''",
+}
+
+def migrar_colunas_contexto_ia(conn):
+    """Adiciona as colunas de contexto/priorização da IA na tabela
+    vulnerabilidades caso ainda não existam. Idempotente e não destrutivo:
+    pode ser chamada toda vez que a aplicação sobe."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(vulnerabilidades)")
+    colunas_existentes = {linha[1] for linha in cursor.fetchall()}
+
+    for coluna, definicao in COLUNAS_IA_CONTEXTO.items():
+        if coluna not in colunas_existentes:
+            cursor.execute(f"ALTER TABLE vulnerabilidades ADD COLUMN {coluna} {definicao}")
+            print(f"[migração] Coluna '{coluna}' adicionada em vulnerabilidades.")
+
+    conn.commit()
+
 def calcular_score(impacto, frequencia, gravidade):
     return round((impacto * 0.4) + (frequencia * 0.3) + (gravidade * 0.3), 2)
 
@@ -96,27 +126,16 @@ def listar_vulnerabilidades(conn, ordenar_por_score=True):
     return cursor.fetchall()
 
 if __name__ == '__main__':
+    # Este bloco só roda se você executar "python banco.py" diretamente.
+    # Ele NÃO insere mais dados de teste a cada execução — só garante que
+    # o schema (tabelas + colunas da IA) existe. Rodar isso é opcional:
+    # o app.py já faz a mesma coisa sozinho toda vez que o servidor sobe.
     conexao = conectar_banco()
     criar_tabelas(conexao)
+    migrar_colunas_contexto_ia(conexao)
 
-    print("Inserindo dados de teste...")
-    id_vuln = inserir_vulnerabilidade(
-        conexao,
-        nome="Falha de Autenticação na API",
-        impacto=85,
-        frequencia=40,
-        gravidade=90
-    )
-
-    inserir_historico(
-        conexao,
-        vulnerabilidade_id=id_vuln,
-        acao="Identificação e registro inicial",
-        responsavel="Equipe Blue Team"
-    )
-
-    print("Vulnerabilidades no banco:")
-    for v in listar_vulnerabilidades(conexao):
-        print(v)
+    total = conexao.execute("SELECT COUNT(*) FROM vulnerabilidades").fetchone()[0]
+    print(f"Banco pronto. {total} vulnerabilidade(s) já cadastrada(s).")
+    print("Para usar o sistema, rode: python app.py")
 
     conexao.close()
