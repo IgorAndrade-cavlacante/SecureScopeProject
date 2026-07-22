@@ -398,7 +398,7 @@ def gerar_alertas_monitoramento(conn, dias_limite=7, prioridade_minima=80):
         if dias_aberta >= dias_limite:
             local = f" ({ativo})" if ativo else ""
             alertas.append(
-                f"⚠️ '{nome}'{local} está em aberto há {dias_aberta} dia(s) com prioridade "
+                f"'{nome}'{local} está em aberto há {dias_aberta} dia(s) com prioridade "
                 f"{prioridade:.0f} e ainda não foi validada nem contida."
             )
 
@@ -417,7 +417,7 @@ def gerar_alertas_monitoramento(conn, dias_limite=7, prioridade_minima=80):
 
         if total >= 2:
             alertas.append(
-                f"🎯 Ativo com maior concentração de risco: '{nome_ativo}' ({total} vulnerabilidades em aberto/validadas)."
+                f"Ativo com maior concentração de risco: '{nome_ativo}' ({total} vulnerabilidades em aberto/validadas)."
             )
 
     return alertas

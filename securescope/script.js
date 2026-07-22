@@ -1,5 +1,16 @@
 const API_URL = 'http://127.0.0.1:5000';
 
+// Ícones SVG inline (herdam a cor via currentColor), substituem os emojis
+// que estavam espalhados pelo JS.
+const ICONS = {
+    checkCircle: '<svg class="icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    xCircle: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    alertTriangle: '<svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    zap: '<svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    search: '<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    target: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
+};
+
 let endpointAtual = '/vulnerabilidades';
 let debounceSugestaoTimer = null;
 let sugestaoAtual = null;
@@ -16,12 +27,23 @@ window.onload = () => {
     carregarOrigens();
 };
 
-function mostrarToast(msg, cor = '#2c3e50') {
-    const toast = document.getElementById('toast');
+// Mapa tipo -> cor + ícone. As cores são as mesmas que já existiam
+// espalhadas pelos chamadas de mostrarToast (nenhuma cor nova).
+const TOAST_TIPOS = {
+    sucesso: { cor: '#28a745', icone: ICONS.checkCircle },
+    erro:    { cor: '#dc3545', icone: ICONS.xCircle },
+    critico: { cor: '#dc3545', icone: ICONS.zap },
+    alerta:  { cor: '#e0a800', icone: ICONS.alertTriangle },
+    info:    { cor: '#2c3e50', icone: ICONS.alertTriangle }
+};
 
-    toast.textContent = msg;
-    toast.style.background = cor;
-    toast.style.display = 'block';
+function mostrarToast(msg, tipo = 'info') {
+    const toast = document.getElementById('toast');
+    const config = TOAST_TIPOS[tipo] || TOAST_TIPOS.info;
+
+    toast.innerHTML = config.icone + '<span>' + msg + '</span>';
+    toast.style.background = config.cor;
+    toast.style.display = 'flex';
 
     setTimeout(() => {
         toast.style.display = 'none';
@@ -69,11 +91,11 @@ function renderizarTabela(dados) {
             tr.classList.add('risco-critico');
         }
 
-        let classePrioridade = '';
+        let classeBadge = 'badge-moderada';
         if (prioridade >= 90) {
-            classePrioridade = 'prioridade-alta';
+            classeBadge = 'badge-critica';
         } else if (prioridade >= 75) {
-            classePrioridade = 'prioridade-media';
+            classeBadge = 'badge-alta';
         }
 
         tr.innerHTML = `
@@ -83,7 +105,11 @@ function renderizarTabela(dados) {
             <td>${vuln.frequencia}</td>
             <td>${vuln.gravidade}</td>
             <td><strong>${score.toFixed(2)}</strong></td>
-            <td class="${classePrioridade}"><strong>${prioridade.toFixed(1)}</strong></td>
+            <td>
+                <span class="badge-prioridade ${classeBadge}">
+                    <span class="badge-dot"></span>${prioridade.toFixed(1)}
+                </span>
+            </td>
             <td>${vuln.status}</td>
             <td>
                 <button class="btn-validar"
@@ -96,9 +122,9 @@ function renderizarTabela(dados) {
                     Circuit Breaker
                 </button>
 
-                <button class="btn-analisar"
+                <button class="btn-analisar icon-inline"
                     onclick="abrirAnaliseIA(${vuln.id})">
-                    🔍 Analisar
+                    ${ICONS.search}Analisar
                 </button>
             </td>
         `;
@@ -136,8 +162,8 @@ document.getElementById('formVuln').addEventListener('submit', async (e) => {
     const data = await res.json();
 
     mostrarToast(
-        `✅ "${payload.nome}" adicionada! Risk Index™: ${data['Risk Index™']} | Prioridade: ${data.prioridade}`,
-        '#28a745'
+        `"${payload.nome}" adicionada! Risk Index™: ${data['Risk Index™']} | Prioridade: ${data.prioridade}`,
+        'sucesso'
     );
 
     document.getElementById('formVuln').reset();
@@ -233,8 +259,8 @@ function mostrarPerguntaWizard() {
         const ativos = Object.values(respostasWizard).filter(Boolean).length;
         areaPergunta.style.display = 'none';
         areaResumo.style.display = 'block';
-        document.getElementById('wizard-resumo-texto').innerText =
-            `✅ Análise de contexto concluída — ${ativos} de ${perguntasWizard.length} riscos ativos detectados.`;
+        document.getElementById('wizard-resumo-texto').innerHTML =
+            `${ICONS.checkCircle}Análise de contexto concluída — ${ativos} de ${perguntasWizard.length} riscos ativos detectados.`;
         return;
     }
 
@@ -306,8 +332,8 @@ async function validarVuln(id) {
     });
 
     mostrarToast(
-        `✅ Vulnerabilidade #${id} validada!`,
-        '#28a745'
+        `Vulnerabilidade #${id} validada!`,
+        'sucesso'
     );
 
     carregarVulnerabilidades();
@@ -326,8 +352,8 @@ async function acionarCircuitBreaker(id) {
     });
 
     mostrarToast(
-        `🚨 Circuit Breaker acionado!`,
-        '#dc3545'
+        `Circuit Breaker acionado!`,
+        'critico'
     );
 
     carregarVulnerabilidades();
@@ -390,7 +416,9 @@ async function carregarInsightsIA() {
             lista.innerHTML = '';
             dados.alertas_monitoramento.forEach(msg => {
                 const li = document.createElement('li');
-                li.innerText = msg;
+                li.className = 'icon-inline';
+                const icone = msg.includes('concentração de risco') ? ICONS.target : ICONS.alertTriangle;
+                li.innerHTML = icone + '<span>' + msg + '</span>';
                 lista.appendChild(li);
             });
 
@@ -439,7 +467,7 @@ async function gerarRelatorio() {
         const dados = await res.json();
 
         if (!dados || dados.length === 0) {
-            mostrarToast('⚠️ Nenhuma vulnerabilidade para gerar relatório.', '#e0a800');
+            mostrarToast('Nenhuma vulnerabilidade para gerar relatório.', 'alerta');
             return;
         }
 
@@ -474,10 +502,10 @@ async function gerarRelatorio() {
         const nomeArquivo = `relatorio-securescope-${new Date().toISOString().slice(0, 10)}.pdf`;
         doc.save(nomeArquivo);
 
-        mostrarToast('✅ Relatório PDF gerado com sucesso!', '#28a745');
+        mostrarToast('Relatório PDF gerado com sucesso!', 'sucesso');
 
     } catch (error) {
-        mostrarToast('❌ Erro ao gerar relatório PDF.', '#dc3545');
+        mostrarToast('Erro ao gerar relatório PDF.', 'erro');
     }
 }
 
@@ -491,7 +519,7 @@ async function abrirAnaliseIA(id) {
         const res = await fetch(`${API_URL}/vulnerabilidades/${id}/analise`);
 
         if (!res.ok) {
-            mostrarToast('❌ Não foi possível carregar a análise.', '#dc3545');
+            mostrarToast('Não foi possível carregar a análise.', 'erro');
             return;
         }
 
@@ -544,7 +572,7 @@ async function abrirAnaliseIA(id) {
         document.getElementById('modal-analise-fundo').style.display = 'flex';
 
     } catch (error) {
-        mostrarToast('❌ Erro ao conectar com a IA de análise.', '#dc3545');
+        mostrarToast('Erro ao conectar com a IA de análise.', 'erro');
     }
 }
 
