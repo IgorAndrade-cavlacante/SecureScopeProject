@@ -63,6 +63,14 @@ COLUNAS_IA_CONTEXTO = {
     "explicacao":                "TEXT NOT NULL DEFAULT ''",
     "origem":                    "TEXT NOT NULL DEFAULT 'Manual/Pentest'",
     "ativo":                     "TEXT NOT NULL DEFAULT ''",
+    # M1 — Modelo tripartido CVSS + EPSS + KEV (padrão de mercado: CrowdStrike, Palo Alto)
+    "cvss_score":               "REAL NOT NULL DEFAULT 0.0",
+    "epss_score":               "REAL NOT NULL DEFAULT 0.0",
+    "cve_id":                   "TEXT NOT NULL DEFAULT ''",
+    "no_kev":                   "INTEGER NOT NULL DEFAULT 0",
+    # M2 — SLAs formais por nível de prioridade (NIST SP 800-53 SI-2 / ISO 27001 A.8.8)
+    "sla_prazo_dias":           "INTEGER NOT NULL DEFAULT 90",
+    "sla_prioridade":           "TEXT NOT NULL DEFAULT 'P3'",
 }
 
 def migrar_colunas_contexto_ia(conn):
@@ -77,6 +85,22 @@ def migrar_colunas_contexto_ia(conn):
         if coluna not in colunas_existentes:
             cursor.execute(f"ALTER TABLE vulnerabilidades ADD COLUMN {coluna} {definicao}")
             print(f"[migração] Coluna '{coluna}' adicionada em vulnerabilidades.")
+
+    # M2 — Tabela de SLAs formais: rastreia status em tempo real por vulnerabilidade.
+    # Permite gerar evidência auditável exigida por ISO 27001 A.8.8 e NIST CA-7.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sla_vulnerabilidades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vulnerabilidade_id INTEGER NOT NULL,
+            nivel_sla TEXT NOT NULL,
+            prazo_dias INTEGER NOT NULL,
+            data_inicio TEXT NOT NULL,
+            data_prazo TEXT NOT NULL,
+            data_resolucao TEXT,
+            status_sla TEXT DEFAULT 'Em Prazo',
+            FOREIGN KEY(vulnerabilidade_id) REFERENCES vulnerabilidades(id)
+        )
+    ''')
 
     conn.commit()
 

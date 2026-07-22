@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import ia
 import banco
 
@@ -109,6 +109,12 @@ def adicionar_vulnerabilidade():
         origem = "Manual/Pentest"
     ativo = (dados.get("ativo") or "").strip()
 
+    # M1 — Campos do modelo tripartido CVSS + EPSS + KEV
+    cvss_score  = float(dados.get("cvss_score", 0.0) or 0.0)
+    epss_score  = float(dados.get("epss_score", 0.0) or 0.0)
+    cve_id      = (dados.get("cve_id") or "").strip()
+    no_kev      = bool(dados.get("no_kev", False))
+
     categoria = ia.detectar_categoria(nome)
 
     conn = get_db_connection()
@@ -117,8 +123,24 @@ def adicionar_vulnerabilidade():
     correlacao_categoria = ia.correlacionar_historico(conn, categoria)
     correlacao_ativo = ia.correlacionar_por_ativo(conn, ativo)
 
-    # Motor de priorização: Risk Index™ base + fatores de contexto reais.
-    prioridade, explicacao_fatores = ia.calcular_prioridade(score, fatores)
+    # M1 — Motor de priorização: usa v2 (tripartido) quando CVSS > 0, legado caso contrário.
+    if cvss_score > 0 or no_kev:
+        prioridade, nivel_sla, sla_prazo_dias, explicacao_fatores = ia.calcular_prioridade_v2(
+            cvss_score, epss_score, no_kev, fatores
+        )
+        sla_prioridade = nivel_sla
+    else:
+        prioridade, explicacao_fatores = ia.calcular_prioridade(score, fatores)
+        # Determinar SLA pelo score legado
+        if prioridade >= 90:
+            sla_prioridade, sla_prazo_dias = "P1", 15
+        elif prioridade >= 70:
+            sla_prioridade, sla_prazo_dias = "P2", 30
+        elif prioridade >= 40:
+            sla_prioridade, sla_prazo_dias = "P3", 90
+        else:
+            sla_prioridade, sla_prazo_dias = "P4", 180
+
     if correlacao_categoria["alerta"]:
         prioridade = round(min(prioridade + 5, 100.0), 1)
         explicacao_fatores.append(f"+5 pontos — {correlacao_categoria['mensagem']}")
@@ -134,14 +156,16 @@ def adicionar_vulnerabilidade():
             (nome, impacto, frequencia, gravidade, score, status, data,
              exposta_internet, exploit_publico, dados_sensiveis,
              escalonamento_privilegio, ambiente_producao,
-             categoria, prioridade, explicacao, origem, ativo)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             categoria, prioridade, explicacao, origem, ativo,
+             cvss_score, epss_score, cve_id, no_kev, sla_prazo_dias, sla_prioridade)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         nome, impacto, frequencia, gravidade, score, "Aberta", data_atual,
         int(fatores["exposta_internet"]), int(fatores["exploit_publico"]),
         int(fatores["dados_sensiveis"]), int(fatores["escalonamento_privilegio"]),
         int(fatores["ambiente_producao"]), categoria, prioridade, explicacao_texto,
-        origem, ativo
+        origem, ativo, cvss_score, epss_score, cve_id, int(no_kev),
+        sla_prazo_dias, sla_prioridade
     ))
     vulnerabilidade_id = cursor.lastrowid
     conn.commit()
@@ -154,6 +178,11 @@ def adicionar_vulnerabilidade():
         "Risk Index™": score,
         "categoria": categoria,
         "prioridade": prioridade,
+        "sla_prioridade": sla_prioridade,
+        "sla_prazo_dias": sla_prazo_dias,
+        "cvss_score": cvss_score,
+        "epss_score": epss_score,
+        "no_kev": no_kev,
         "explicacao": explicacao_fatores,
         "guia_remediacao": ia.gerar_guia_remediacao(categoria),
         "correlacao_categoria": correlacao_categoria,
@@ -224,6 +253,185 @@ def insights_ia():
     insights = ia.aprender_com_historico(conn)
     conn.close()
     return jsonify(insights)
+
+# ─────────────────────────────────────────────
+# M2 — SLA STATUS (NIST SI-2(2) / ISO 27001 A.8.8)
+# ─────────────────────────────────────────────
+
+@app.route('/sla/status', methods=['GET'])
+def status_slas():
+    """M2 — Retorna todas as vulnerabilidades com status de SLA calculado em
+    tempo real (Em Prazo / Em Risco / Violado). Fornece evidência auditável
+    exigida por NIST SP 800-53 SI-2(2) e ISO 27001 A.8.8."""
+    conn = get_db_connection()
+    agora = datetime.now()
+
+    vulns = conn.execute(
+        "SELECT id, nome, sla_prioridade, sla_prazo_dias, data, status FROM vulnerabilidades "
+        "WHERE status NOT IN ('Isolada (Circuit Breaker)')"
+    ).fetchall()
+
+    resultados = []
+    for v in vulns:
+        try:
+            data_registro = datetime.strptime(v["data"], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            continue
+        prazo_dias = v["sla_prazo_dias"] or 90
+        prazo = data_registro + timedelta(days=prazo_dias)
+        dias_restantes = (prazo - agora).days
+
+        if dias_restantes < 0:
+            status_sla = "Violado"
+        elif dias_restantes <= 3:
+            status_sla = "Em Risco"
+        else:
+            status_sla = "Em Prazo"
+
+        resultados.append({
+            "id": v["id"],
+            "nome": v["nome"],
+            "nivel": v["sla_prioridade"] or "P3",
+            "prazo_dias": prazo_dias,
+            "dias_restantes": dias_restantes,
+            "status_sla": status_sla
+        })
+
+    conn.close()
+    return jsonify(resultados), 200
+
+# ─────────────────────────────────────────────
+# M4 — OWASP SAMM MATURITY SCORE
+# ─────────────────────────────────────────────
+
+@app.route('/governance/maturity', methods=['GET'])
+def calcular_maturidade_samm():
+    """M4 — Calcula Score de Maturidade OWASP SAMM simplificado (0 a 3).
+    Nível 0 = Inexistente | Nível 1 = Básico | Nível 2 = Gerenciado | Nível 3 = Otimizado.
+    KPI de alto valor executivo — o que CISOs apresentam ao board."""
+    conn = get_db_connection()
+    total = conn.execute("SELECT COUNT(*) FROM vulnerabilidades").fetchone()[0]
+    validadas = conn.execute("SELECT COUNT(*) FROM vulnerabilidades WHERE status='Validada'").fetchone()[0]
+    com_sla = conn.execute(
+        "SELECT COUNT(*) FROM vulnerabilidades WHERE sla_prioridade IS NOT NULL AND sla_prioridade != ''"
+    ).fetchone()[0]
+    com_ativo = conn.execute(
+        "SELECT COUNT(*) FROM vulnerabilidades WHERE ativo != '' AND ativo IS NOT NULL"
+    ).fetchone()[0]
+    origens_distintas = conn.execute("SELECT COUNT(DISTINCT origem) FROM vulnerabilidades").fetchone()[0]
+    conn.close()
+
+    if total == 0:
+        return jsonify({"nivel_samm": 0, "descricao": "Sem dados suficientes para avaliação.", "detalhes": []}), 200
+
+    score = 0
+    detalhes = []
+    taxa_validacao = validadas / total
+    taxa_com_ativo = com_ativo / total
+    taxa_com_sla = com_sla / total
+
+    # Nível 1: Processo básico — vulnerabilidades sendo registradas
+    if total > 0:
+        score += 1
+        detalhes.append("Nível 1 atingido: registro de vulnerabilidades ativo.")
+
+    # Nível 2: Processo gerenciado — validação e múltiplas origens
+    if taxa_validacao >= 0.5 and origens_distintas >= 2:
+        score += 1
+        detalhes.append(f"Nível 2 atingido: {taxa_validacao:.0%} de validação | {origens_distintas} origens distintas.")
+
+    # Nível 3: Processo otimizado — SLAs, ativos mapeados e correlação ativa
+    if taxa_com_ativo >= 0.7 and taxa_com_sla >= 0.7:
+        score += 1
+        detalhes.append(f"Nível 3 atingido: {taxa_com_ativo:.0%} com ativo mapeado | {taxa_com_sla:.0%} com SLA definido.")
+
+    descricoes = {
+        0: "Inicial (Ad-hoc) — sem processo definido.",
+        1: "Básico — processo de registro existe, mas inconsistente.",
+        2: "Gerenciado — processo aplicado com validação e múltiplas fontes.",
+        3: "Otimizado — governança por SLA, ativos mapeados e rastreabilidade completa."
+    }
+
+    return jsonify({
+        "nivel_samm": score,
+        "descricao": descricoes.get(score),
+        "detalhes": detalhes,
+        "taxa_validacao": round(taxa_validacao, 2),
+        "origens_distintas": origens_distintas,
+        "total_vulnerabilidades": total
+    }), 200
+
+# ─────────────────────────────────────────────
+# M6 — KPIs DE GOVERNÂNÇA (NIST CA-7 / Seção 9 da pesquisa)
+# ─────────────────────────────────────────────
+
+@app.route('/governance/kpis', methods=['GET'])
+def kpis_governanca():
+    """M6 — KPIs operacionais de governança: SLA Breach Rate e Scan Coverage.
+    Esses KPIs são os mesmos definidos na Seção 9 da pesquisa ASPM e medidos
+    por plataformas como Microsoft Defender for Cloud."""
+    conn = get_db_connection()
+    agora = datetime.now()
+
+    total = conn.execute("SELECT COUNT(*) FROM vulnerabilidades").fetchone()[0]
+
+    # SLA Breach Rate — % de vulnerabilidades em aberto que ultrapassaram o SLA
+    total_aberto = conn.execute(
+        "SELECT COUNT(*) FROM vulnerabilidades WHERE status NOT IN ('Isolada (Circuit Breaker)')"
+    ).fetchone()[0]
+
+    violados = 0
+    if total_aberto > 0:
+        vulns_abertas = conn.execute(
+            "SELECT data, sla_prazo_dias FROM vulnerabilidades "
+            "WHERE status NOT IN ('Isolada (Circuit Breaker)') AND sla_prazo_dias > 0"
+        ).fetchall()
+        for v in vulns_abertas:
+            try:
+                data_reg = datetime.strptime(v["data"], "%Y-%m-%d %H:%M:%S")
+                prazo = data_reg + timedelta(days=v["sla_prazo_dias"])
+                if agora > prazo:
+                    violados += 1
+            except (ValueError, TypeError):
+                pass
+
+    sla_breach_rate = round((violados / total_aberto * 100), 1) if total_aberto > 0 else 0
+
+    # Scan Coverage Rate — % de vulnerabilidades com ativo mapeado
+    com_ativo = conn.execute(
+        "SELECT COUNT(*) FROM vulnerabilidades WHERE ativo != '' AND ativo IS NOT NULL"
+    ).fetchone()[0]
+    scan_coverage = round((com_ativo / total * 100), 1) if total > 0 else 0
+
+    # Distribuição por origem (ingestão multi-fonte)
+    origens = conn.execute(
+        "SELECT origem, COUNT(*) as c FROM vulnerabilidades GROUP BY origem ORDER BY c DESC"
+    ).fetchall()
+
+    # Distribuição por nível SLA
+    sla_dist = conn.execute(
+        "SELECT sla_prioridade, COUNT(*) as c FROM vulnerabilidades GROUP BY sla_prioridade ORDER BY sla_prioridade"
+    ).fetchall()
+
+    # Vulnerabilidades críticas (P0 + P1)
+    criticas = conn.execute(
+        "SELECT COUNT(*) FROM vulnerabilidades WHERE sla_prioridade IN ('P0', 'P1') AND status != 'Isolada (Circuit Breaker)'"
+    ).fetchone()[0]
+
+    conn.close()
+
+    return jsonify({
+        "total_vulnerabilidades": total,
+        "vulnerabilidades_em_aberto": total_aberto,
+        "criticas_p0_p1": criticas,
+        "sla_breach_rate_percent": sla_breach_rate,
+        "sla_violados": violados,
+        "scan_coverage_rate_percent": scan_coverage,
+        "ativos_mapeados": com_ativo,
+        "distribuicao_por_origem": {o["origem"]: o["c"] for o in origens},
+        "distribuicao_por_sla": {s["sla_prioridade"]: s["c"] for s in sla_dist},
+        "timestamp": agora.strftime("%Y-%m-%d %H:%M:%S")
+    }), 200
 
 @app.route('/vulnerabilidades/<int:id>/analise', methods=['GET'])
 def analise_vulnerabilidade(id):

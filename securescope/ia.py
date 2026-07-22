@@ -149,13 +149,77 @@ def gerar_guia_remediacao(categoria):
     em ordem de execução."""
     return GUIAS_REMEDIACAO.get(categoria, GUIA_REMEDIACAO_PADRAO)
 
+# M1 — Tabela de SLAs por nível de prioridade (NIST SP 800-53 SI-2 / ISO 27001 A.8.8)
+# P0 = exploração ativa confirmada (CISA KEV), P1-P4 por score de risco real.
+PESOS_SLA = {
+    "P0": 1,    # 24-72 horas (KEV Override: exploração ativa)
+    "P1": 15,   # 15 dias
+    "P2": 30,   # 30 dias
+    "P3": 90,   # 90 dias
+    "P4": 180,  # 180 dias ou aceite de risco
+}
+
+def calcular_prioridade_v2(cvss, epss, no_kev, fatores, criticidade_ativo=1.0):
+    """
+    M1 — Motor de priorização tripartido (estado da arte ASPM 2024-2026):
+      Rp = [(CVSS × 0.30) + (EPSS × 100 × 0.70)] × C_ativo × E_fator
+
+    Baseado na metodologia documentada em plataformas como CrowdStrike Falcon
+    ASPM e Palo Alto Prisma Cloud, que combinam:
+      - CVSS v4.0: Severidade técnica teórica (base estática)
+      - EPSS v3 (FIRST): Probabilidade de exploração nos próximos 30 dias
+      - CISA KEV: Exploração ativa confirmada em produção (urgente máxima)
+
+    Retorna: (score, nivel_sla, prazo_dias, explicacao)
+    """
+    cvss = float(cvss or 0.0)
+    epss = float(epss or 0.0)
+    fatores = fatores or {}
+
+    # KEV Override — se na lista CISA, prioridade máxima automática (P0)
+    if no_kev:
+        explicacao = [
+            "KEV Override: vulnerabilidade com exploração ativa confirmada (CISA KEV).",
+            f"CVSS: {cvss} | EPSS: {epss:.2%} | Ativo Crítico: {'Sim' if criticidade_ativo > 1 else 'Não'}",
+            "SLA P0 atribuído automaticamente — remediação em até 72 horas."
+        ]
+        return 100.0, "P0", PESOS_SLA["P0"], explicacao
+
+    # Score base ponderado (CVSS 30% + EPSS 70%)
+    score_base = (cvss * 0.30) + (epss * 100 * 0.70)
+
+    # Fator de exposição na internet (dobra o risco quando ativo está exposto)
+    e_fator = 2.0 if fatores.get("exposta_internet") else 1.0
+
+    # Score final limitado a 100
+    rp = round(min(score_base * criticidade_ativo * e_fator, 100.0), 1)
+
+    # Determinar nível SLA por score
+    if rp >= 90 or (cvss >= 9.0 and epss >= 0.50):
+        nivel = "P1"
+    elif rp >= 70 or (cvss >= 7.0 and epss >= 0.30):
+        nivel = "P2"
+    elif rp >= 40:
+        nivel = "P3"
+    else:
+        nivel = "P4"
+
+    explicacao = [
+        f"CVSS: {cvss:.1f} (peso 30% → {cvss * 0.30:.1f} pts)",
+        f"EPSS: {epss:.2%} (peso 70% → {epss * 100 * 0.70:.1f} pts)",
+        f"Score Base: {score_base:.1f} | Fator Exposição: {e_fator}x",
+        f"Priority Score Final: {rp} → Nível {nivel} (SLA: {PESOS_SLA[nivel]} dias)"
+    ]
+
+    return rp, nivel, PESOS_SLA[nivel], explicacao
+
+
 def calcular_prioridade(risk_index_base, fatores):
     """
-    Motor de priorização: parte do Risk Index™ (base) e soma pontos para
-    cada fator de contexto real (exposição na internet, exploit público,
-    dados sensíveis, escalonamento de privilégio, ambiente de produção).
-    Retorna a Priority Score final (0-100) e a explicação passo a passo
-    de como ela foi composta (explicabilidade).
+    Motor de priorização legado: mantido para compatibilidade retroativa com
+    registros antigos que não possuem CVSS/EPSS. Para novos registros, o
+    endpoint usa calcular_prioridade_v2() quando cvss_score > 0.
+    Retorna a Priority Score final (0-100) e a explicação passo a passo.
     """
     fatores = fatores or {}
     prioridade = float(risk_index_base)
