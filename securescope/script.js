@@ -1,5 +1,133 @@
 const API_URL = 'http://127.0.0.1:5000';
 
+// M3 — Helper: retorna headers com Bearer token se o usuário estiver logado
+function getAuthHeaders(extra = {}) {
+    const token = localStorage.getItem('ss_token');
+    const headers = { 'Content-Type': 'application/json', ...extra };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+}
+
+// M3 — Atualiza o botão da navbar com o estado de autenticação
+function atualizarBotaoAuth() {
+    const btn = document.getElementById('btn-auth');
+    if (!btn) return;
+    const nome = localStorage.getItem('ss_nome');
+    if (nome) {
+        btn.innerHTML = nome;
+        btn.title = 'Clique para sair';
+        btn.onclick = fazerLogout;
+        btn.style.background = 'rgba(0, 200, 81, 0.15)';
+        btn.style.borderColor = 'rgba(0, 200, 81, 0.5)';
+        btn.style.color = '#00C851';
+    } else {
+        btn.innerHTML = 'Entrar';
+        btn.title = '';
+        btn.onclick = abrirModalAuth;
+        btn.style.background = 'rgba(123, 46, 255, 0.2)';
+        btn.style.borderColor = 'rgba(123, 46, 255, 0.6)';
+        btn.style.color = '#c4a1ff';
+    }
+}
+
+function abrirModalAuth() {
+    // Se já está logado, clique no botão faz logout direto
+    if (localStorage.getItem('ss_token')) { fazerLogout(); return; }
+    const fundo = document.getElementById('modal-auth-fundo');
+    fundo.style.display = 'flex';
+    document.getElementById('auth-email').focus();
+}
+
+function fecharModalAuth() {
+    document.getElementById('modal-auth-fundo').style.display = 'none';
+    document.getElementById('auth-erro-login').innerText = '';
+    document.getElementById('auth-erro-registro').innerText = '';
+}
+
+function mostrarAbaLogin() {
+    document.getElementById('form-login').style.display = 'block';
+    document.getElementById('form-registro').style.display = 'none';
+    document.getElementById('aba-login').style.borderBottom = '2px solid #7b2eff';
+    document.getElementById('aba-login').style.color = '#c4a1ff';
+    document.getElementById('aba-registro').style.borderBottom = '2px solid transparent';
+    document.getElementById('aba-registro').style.color = '#666';
+}
+
+function mostrarAbaRegistro() {
+    document.getElementById('form-login').style.display = 'none';
+    document.getElementById('form-registro').style.display = 'block';
+    document.getElementById('aba-registro').style.borderBottom = '2px solid #7b2eff';
+    document.getElementById('aba-registro').style.color = '#c4a1ff';
+    document.getElementById('aba-login').style.borderBottom = '2px solid transparent';
+    document.getElementById('aba-login').style.color = '#666';
+}
+
+async function fazerLogin() {
+    const email = document.getElementById('auth-email').value.trim();
+    const senha = document.getElementById('auth-senha').value;
+    const erroEl = document.getElementById('auth-erro-login');
+    erroEl.innerText = '';
+
+    if (!email || !senha) { erroEl.innerText = 'Preencha e-mail e senha.'; return; }
+
+    try {
+        const res = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, senha })
+        });
+        const data = await res.json();
+        if (!res.ok) { erroEl.innerText = data.erro || 'Credenciais inválidas.'; return; }
+
+        localStorage.setItem('ss_token', data.access_token);
+        localStorage.setItem('ss_nome', data.nome);
+        localStorage.setItem('ss_email', data.email);
+        fecharModalAuth();
+        atualizarBotaoAuth();
+        mostrarToast(`Bem-vindo, ${data.nome}!`, 'sucesso');
+    } catch (e) {
+        erroEl.innerText = 'Erro ao conectar com o servidor.';
+    }
+}
+
+async function fazerRegistro() {
+    const nome  = document.getElementById('reg-nome').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const senha = document.getElementById('reg-senha').value;
+    const erroEl = document.getElementById('auth-erro-registro');
+    erroEl.innerText = '';
+
+    if (!nome || !email || !senha) { erroEl.innerText = 'Preencha todos os campos.'; return; }
+    if (senha.length < 6) { erroEl.innerText = 'Senha deve ter no mínimo 6 caracteres.'; return; }
+
+    try {
+        const res = await fetch(`${API_URL}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome, email, senha })
+        });
+        const data = await res.json();
+        if (!res.ok) { erroEl.innerText = data.erro || 'Erro ao criar conta.'; return; }
+
+        mostrarToast('Conta criada! Faça login.', 'sucesso');
+        document.getElementById('reg-nome').value = '';
+        document.getElementById('reg-email').value = '';
+        document.getElementById('reg-senha').value = '';
+        mostrarAbaLogin();
+        document.getElementById('auth-email').value = email;
+    } catch (e) {
+        erroEl.innerText = 'Erro ao conectar com o servidor.';
+    }
+}
+
+function fazerLogout() {
+    localStorage.removeItem('ss_token');
+    localStorage.removeItem('ss_nome');
+    localStorage.removeItem('ss_email');
+    atualizarBotaoAuth();
+    mostrarToast('Sessão encerrada.', 'info');
+}
+
 // Ícones SVG inline (herdam a cor via currentColor), substituem os emojis
 // que estavam espalhados pelo JS.
 const ICONS = {
@@ -25,7 +153,49 @@ window.onload = () => {
     carregarVulnerabilidades();
     carregarInsightsIA();
     carregarOrigens();
+    carregarSLAWidget();
+    carregarKPIsGovernance();
+    atualizarBotaoAuth(); // M3 — restaura estado do login do localStorage
+
+    // Abre modal de auth automaticamente quando o usuário vem da Home
+    // via ?auth=login ou ?auth=registro (e ainda não está logado)
+    if (!localStorage.getItem('ss_token')) {
+        const authParam = new URLSearchParams(window.location.search).get('auth');
+        if (authParam === 'login' || authParam === 'registro') {
+            abrirModalAuth();
+            if (authParam === 'registro') mostrarAbaRegistro();
+        }
+    }
+
+    // Fechar modal com tecla Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') fecharModalVuln();
+    });
 };
+
+// ─────────────────────────────────────────────
+// MODAL — Nova Vulnerabilidade
+// ─────────────────────────────────────────────
+
+function abrirModalVuln() {
+    document.getElementById('modal-vuln-fundo').classList.add('aberto');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => {
+        const input = document.getElementById('nome');
+        if (input) input.focus();
+    }, 100);
+}
+
+function fecharModalVuln() {
+    document.getElementById('modal-vuln-fundo').classList.remove('aberto');
+    document.body.style.overflow = '';
+}
+
+function fecharModalVulnFundo(event) {
+    if (event.target === document.getElementById('modal-vuln-fundo')) {
+        fecharModalVuln();
+    }
+}
 
 // Mapa tipo -> cor + ícone. As cores são as mesmas que já existiam
 // espalhadas pelos chamadas de mostrarToast (nenhuma cor nova).
@@ -148,29 +318,36 @@ document.getElementById('formVuln').addEventListener('submit', async (e) => {
         exploit_publico: respostasWizard.exploit_publico || false,
         dados_sensiveis: respostasWizard.dados_sensiveis || false,
         escalonamento_privilegio: respostasWizard.escalonamento_privilegio || false,
-        ambiente_producao: respostasWizard.ambiente_producao || false
+        ambiente_producao: respostasWizard.ambiente_producao || false,
+        // M1 — Motor tripartido CVSS + EPSS + KEV
+        cvss_score: parseFloat(document.getElementById('cvss_score').value) || 0.0,
+        epss_score: parseFloat(document.getElementById('epss_score').value) || 0.0,
+        cve_id: document.getElementById('cve_id').value.trim() || '',
+        no_kev: document.getElementById('no_kev').checked || false
     };
 
     const res = await fetch(`${API_URL}/vulnerabilidades`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: getAuthHeaders(),  // M3 — envia Bearer token
         body: JSON.stringify(payload)
     });
 
     const data = await res.json();
 
+    const motorUsado = (payload.no_kev || payload.cvss_score > 0) ? 'v2 (CVSS+EPSS+KEV)' : 'legado';
+    const slaInfo = data.sla_prioridade ? ` | SLA: ${data.sla_prioridade} (${data.sla_prazo_dias}d)` : '';
     mostrarToast(
-        `"${payload.nome}" adicionada! Risk Index™: ${data['Risk Index™']} | Prioridade: ${data.prioridade}`,
-        'sucesso'
+        `"${payload.nome}" adicionada! Risk Index™: ${data['Risk Index™']} | Prioridade: ${data.prioridade}${slaInfo}`,
+        payload.no_kev ? 'critico' : 'sucesso'
     );
 
     document.getElementById('formVuln').reset();
     esconderSugestaoIA();
     esconderWizard();
+    fecharModalVuln();
 
     carregarVulnerabilidades();
+    carregarSLAWidget();
 });
 
 // ─────────────────────────────────────────────
@@ -328,7 +505,8 @@ document.getElementById('btn-editar-ia').addEventListener('click', () => {
 async function validarVuln(id) {
 
     await fetch(`${API_URL}/vulnerabilidades/${id}/validar`, {
-        method: 'PUT'
+        method: 'PUT',
+        headers: getAuthHeaders()  // M3 — envia Bearer token
     });
 
     mostrarToast(
@@ -348,7 +526,8 @@ async function acionarCircuitBreaker(id) {
     if (!confirmar) return;
 
     await fetch(`${API_URL}/circuit-breaker/${id}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: getAuthHeaders()  // M3 — envia Bearer token
     });
 
     mostrarToast(
@@ -463,8 +642,18 @@ function voltarPadrao() {
 async function gerarRelatorio() {
 
     try {
-        const res = await fetch(`${API_URL}/relatorio`);
-        const dados = await res.json();
+        mostrarToast('Gerando relatório de governança...', 'info');
+
+        // M5 — Buscar dados de 3 endpoints em paralelo
+        const [resVulns, resInsights, resSlas] = await Promise.all([
+            fetch(`${API_URL}/relatorio`),
+            fetch(`${API_URL}/ia/insights`),
+            fetch(`${API_URL}/sla/status`)
+        ]);
+
+        const dados    = await resVulns.json();
+        const insights = await resInsights.json();
+        const slas     = await resSlas.json();
 
         if (!dados || dados.length === 0) {
             mostrarToast('Nenhuma vulnerabilidade para gerar relatório.', 'alerta');
@@ -473,38 +662,178 @@ async function gerarRelatorio() {
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
-
         const dataGeracao = new Date().toLocaleString('pt-BR');
+        const dataArquivo = new Date().toISOString().slice(0, 10);
+        const ROXO       = [123, 46, 255];
+        const AZUL_ESCURO = [44, 62, 80];
 
-        doc.setFontSize(16);
-        doc.text('SecureScope — Relatório de Governança de Risco', 14, 18);
+        // ─── CAPA ────────────────────────────────────────────────────────────
+        doc.setFillColor(...AZUL_ESCURO);
+        doc.rect(0, 0, 210, 42, 'F');
 
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('SecureScope ASPM', 14, 18);
+
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Relatório de Governança de Risco', 14, 28);
+
+        doc.setFontSize(9);
+        doc.setTextColor(180, 190, 205);
+        doc.text(`Gerado em: ${dataGeracao}`, 14, 37);
+
+        // ─── RESUMO EXECUTIVO ─────────────────────────────────────────────────
+        doc.setTextColor(...AZUL_ESCURO);
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Resumo Executivo', 14, 54);
+
+        doc.setDrawColor(...ROXO);
+        doc.setLineWidth(0.5);
+        doc.line(14, 56, 196, 56);
+
+        const slasArr     = Array.isArray(slas) ? slas : [];
+        const totalVulns  = dados.length;
+        const criticas    = dados.filter(v => parseFloat(v.prioridade ?? v.score) >= 90).length;
+        const emAberto    = dados.filter(v => v.status === 'Aberta').length;
+        const validadas   = dados.filter(v => v.status === 'Validada').length;
+        const isoladas    = dados.filter(v => v.status === 'Isolada (Circuit Breaker)').length;
+        const slaViolados = slasArr.filter(s => s.status_sla === 'Violado').length;
+        const slaEmRisco  = slasArr.filter(s => s.status_sla === 'Em Risco').length;
+
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
-        doc.text(`Gerado em: ${dataGeracao}`, 14, 25);
+        doc.setTextColor(55, 55, 75);
 
-        const linhas = dados.map(vuln => [
-            vuln.nome,
-            vuln.impacto,
-            vuln.frequencia,
-            vuln.gravidade,
-            parseFloat(vuln.score).toFixed(2),
-            vuln.status
+        const linhasResumo = [
+            [`Total de Vulnerabilidades:`,  `${totalVulns}`],
+            [`Prioridade Crítica (≥ 90):`,  `${criticas}`],
+            [`Em Aberto / Validadas / Isoladas:`, `${emAberto} / ${validadas} / ${isoladas}`],
+            [`SLAs Violados / Em Risco:`,   `${slaViolados} / ${slaEmRisco}`],
+        ];
+        if (insights.status === 'sucesso') {
+            linhasResumo.push([`Risco Médio Geral:`, `${insights.risco_medio_geral}`]);
+            linhasResumo.push([`Pior Risco Registrado:`, `${insights.pior_risco}`]);
+        }
+
+        let yr = 64;
+        linhasResumo.forEach(([label, valor]) => {
+            doc.setFont('helvetica', 'bold');
+            doc.text(label, 14, yr);
+            doc.setFont('helvetica', 'normal');
+            doc.text(valor, 95, yr);
+            yr += 7;
+        });
+
+        // ─── TABELA PRINCIPAL ENRIQUECIDA ─────────────────────────────────────
+        const startY1 = yr + 6;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(...AZUL_ESCURO);
+        doc.text('Vulnerabilidades Registradas', 14, startY1 - 4);
+
+        const linhasVulns = dados.map(v => [
+            (v.nome        || '').substring(0, 28),
+            (v.ativo       || '—').substring(0, 16),
+            v.cvss_score > 0 ? parseFloat(v.cvss_score).toFixed(1) : '—',
+            parseFloat(v.score).toFixed(1),
+            parseFloat(v.prioridade ?? v.score).toFixed(1),
+            v.sla_prioridade || '—',
+            (v.categoria   || '—').substring(0, 15),
+            (v.origem      || '—').substring(0, 12),
+            v.status
         ]);
 
         doc.autoTable({
-            startY: 32,
-            head: [['Nome', 'Impacto', 'Frequência', 'Gravidade', 'Risk Index™', 'Status']],
-            body: linhas,
-            headStyles: { fillColor: [44, 62, 80] },
-            styles: { fontSize: 9 }
+            startY: startY1,
+            head: [['Nome', 'Ativo', 'CVSS', 'Risk Index', 'Prioridade', 'SLA', 'Categoria', 'Origem', 'Status']],
+            body: linhasVulns,
+            headStyles: { fillColor: AZUL_ESCURO, fontSize: 8, textColor: 255 },
+            styles: { fontSize: 7.5, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 40 },
+                1: { cellWidth: 26 },
+                2: { cellWidth: 13 },
+                3: { cellWidth: 17 },
+                4: { cellWidth: 17 },
+                5: { cellWidth: 11 },
+                6: { cellWidth: 23 },
+                7: { cellWidth: 20 }
+            },
+            didParseCell: (hookData) => {
+                // Destaca linhas de prioridade crítica em vermelho claro
+                if (hookData.section === 'body') {
+                    const prioridade = parseFloat(dados[hookData.row.index]?.prioridade ?? 0);
+                    if (prioridade >= 90) {
+                        hookData.cell.styles.fillColor  = [255, 235, 235];
+                        hookData.cell.styles.textColor  = [140, 0, 0];
+                    }
+                }
+            }
         });
 
-        const nomeArquivo = `relatorio-securescope-${new Date().toISOString().slice(0, 10)}.pdf`;
-        doc.save(nomeArquivo);
+        // ─── TABELA DE STATUS DE SLAs ─────────────────────────────────────────
+        if (slasArr.length > 0) {
+            const alturaRestante = doc.internal.pageSize.height - doc.lastAutoTable.finalY;
+            if (alturaRestante < 70) doc.addPage();
 
-        mostrarToast('Relatório PDF gerado com sucesso!', 'sucesso');
+            const slaY = doc.lastAutoTable.finalY + 12;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setTextColor(...AZUL_ESCURO);
+            doc.text('Status de SLAs de Remediação', 14, slaY - 4);
+
+            const linhasSla = slasArr.map(s => {
+                const diasInfo = s.dias_restantes < 0
+                    ? `${Math.abs(s.dias_restantes)}d em atraso`
+                    : `${s.dias_restantes}d restantes`;
+                return [
+                    (s.nome || '').substring(0, 38),
+                    s.nivel       || '—',
+                    `${s.prazo_dias} dias`,
+                    diasInfo,
+                    s.status_sla
+                ];
+            });
+
+            doc.autoTable({
+                startY: slaY,
+                head: [['Vulnerabilidade', 'Nível', 'Prazo', 'Dias Restantes', 'Status SLA']],
+                body: linhasSla,
+                headStyles: { fillColor: ROXO, fontSize: 8, textColor: 255 },
+                styles: { fontSize: 8, cellPadding: 2 },
+                didParseCell: (hookData) => {
+                    if (hookData.section === 'body' && hookData.column.index === 4) {
+                        const st = hookData.cell.raw;
+                        if      (st === 'Violado')  { hookData.cell.styles.textColor = [180, 0, 0];   hookData.cell.styles.fontStyle = 'bold'; }
+                        else if (st === 'Em Risco') { hookData.cell.styles.textColor = [160, 100, 0]; }
+                        else                        { hookData.cell.styles.textColor = [0, 120, 0];   }
+                    }
+                }
+            });
+        }
+
+        // ─── RODAPÉ EM TODAS AS PÁGINAS ───────────────────────────────────────
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(160, 160, 175);
+            doc.text(
+                `SecureScope ASPM  |  Relatório Confidencial  |  Página ${i} de ${pageCount}`,
+                105,
+                doc.internal.pageSize.height - 8,
+                { align: 'center' }
+            );
+        }
+
+        doc.save(`relatorio-securescope-${dataArquivo}.pdf`);
+        mostrarToast('Relatório de governança gerado com sucesso!', 'sucesso');
 
     } catch (error) {
+        console.error('Erro ao gerar PDF:', error);
         mostrarToast('Erro ao gerar relatório PDF.', 'erro');
     }
 }
@@ -587,3 +916,93 @@ document.getElementById('modal-analise-fundo').addEventListener('click', (e) => 
         fecharAnaliseIA();
     }
 });
+
+// ─────────────────────────────────────────────
+// SLA WIDGET
+// ─────────────────────────────────────────────
+async function carregarSLAWidget() {
+    try {
+        const res = await fetch(`${API_URL}/sla/status`);
+        if (!res.ok) return;
+        const dados = await res.json();
+
+        // O endpoint retorna um array de objetos — Bug M2 corrigido
+        if (!Array.isArray(dados) || dados.length === 0) return;
+
+        const violados = dados.filter(s => s.status_sla === 'Violado');
+        const emRisco  = dados.filter(s => s.status_sla === 'Em Risco');
+
+        // Só exibe o widget se houver algo crítico para mostrar
+        if (violados.length === 0 && emRisco.length === 0) return;
+
+        const box = document.getElementById('sla-status-box');
+        if (!box) return;
+        box.style.display = 'block';
+
+        // Resumo de contagem
+        const partes = [];
+        if (violados.length > 0) partes.push(`${violados.length} violado(s)`);
+        if (emRisco.length  > 0) partes.push(`${emRisco.length} em risco`);
+        document.getElementById('sla-criticos').innerText = partes.join(' / ');
+
+        // Lista dos mais críticos (até 3)
+        const criticos = [...violados, ...emRisco].slice(0, 3);
+        const lista = criticos.map(v => {
+            const diasInfo = v.dias_restantes < 0
+                ? `${Math.abs(v.dias_restantes)}d em atraso`
+                : `${v.dias_restantes}d restantes`;
+            return `${v.nome.substring(0, 25)} (${v.nivel} – ${diasInfo})`;
+        }).join(' | ');
+
+        document.getElementById('sla-lista').innerText = lista;
+
+    } catch (error) {
+        console.error('Erro ao carregar SLAs', error);
+    }
+}
+
+// ─────────────────────────────────────────────
+// GOVERNANCE KPIs (M4 / M6)
+// ─────────────────────────────────────────────
+async function carregarKPIsGovernance() {
+    try {
+        const [resMat, resKpi] = await Promise.all([
+            fetch(`${API_URL}/governance/maturity`),
+            fetch(`${API_URL}/governance/kpis`)
+        ]);
+        
+        if (!resMat.ok || !resKpi.ok) return;
+
+        const mat = await resMat.json();
+        const kpis = await resKpi.json();
+
+        document.getElementById('governance-kpis-box').style.display = 'block';
+
+        // SAMM Maturity
+        document.getElementById('kpi-samm-nivel').innerText = (mat.nivel_samm != null) ? mat.nivel_samm : 'N/A';
+        document.getElementById('kpi-samm-desc').innerText = mat.descricao || '';
+        
+        // SLA Breach Rate
+        const slaBreach = (kpis.sla_breach_rate_percent != null) ? kpis.sla_breach_rate_percent : 0;
+        document.getElementById('kpi-sla-breach').innerText = `${slaBreach}%`;
+        if (slaBreach > 15) {
+            document.getElementById('kpi-sla-breach').style.color = '#ff4444';
+        } else if (slaBreach > 5) {
+            document.getElementById('kpi-sla-breach').style.color = '#ffbb33';
+        } else {
+            document.getElementById('kpi-sla-breach').style.color = '#00C851';
+        }
+
+        // Scan Coverage
+        const scanCoverage = (kpis.scan_coverage_rate_percent != null) ? kpis.scan_coverage_rate_percent : 0;
+        document.getElementById('kpi-scan-coverage').innerText = `${scanCoverage}%`;
+        if (scanCoverage < 80) {
+            document.getElementById('kpi-scan-coverage').style.color = '#ffbb33';
+        } else {
+            document.getElementById('kpi-scan-coverage').style.color = '#00C851';
+        }
+
+    } catch (error) {
+        console.error('Erro ao carregar KPIs de Governança', error);
+    }
+}

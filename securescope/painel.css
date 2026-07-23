@@ -44,8 +44,6 @@ body {
 
 .container {
     max-width: 1100px;
-    position: relative;
-    top: -30px;
     margin: 0 auto;
     background: var(--black-gradient);
     padding: 20px;
@@ -164,6 +162,38 @@ h2 {
     margin-top: 2px;
 }
 
+/* M2 — SLA Widget */
+
+.sla-widget {
+    margin-top: 10px;
+    background: rgba(255, 193, 7, 0.10);
+    border: 1px solid rgba(255, 193, 7, 0.50);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text-main);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sla-widget strong {
+    color: #ffc107;
+    font-size: 13px;
+}
+
+.sla-criticos-badge {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 0.5px;
+}
+
+.sla-lista-texto {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
 /* Sugestão IA */
 
 #ia-sugestao {
@@ -197,10 +227,39 @@ h2 {
     grid-column: 1 / -1;
 }
 
-input {
-    padding: 8px;
-    border: 1px solid var(--medium-gray);
-    border-radius: 4px;
+input, select {
+    padding: 10px 12px;
+    border: 1px solid #3a3a5a;
+    border-radius: 6px;
+    background-color: #1e1e35;
+    color: #e8e8f0;
+    font-size: 0.93rem;
+    transition: border-color 0.2s;
+    width: 100%;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--purple-main);
+    box-shadow: 0 0 0 2px rgba(123, 46, 255, 0.2);
+}
+
+input::placeholder {
+    color: #6e6e90;
+}
+
+select option {
+    background-color: #1e1e35;
+    color: #e8e8f0;
+}
+
+/* Labels dentro do modal */
+.modal-vuln-corpo .form-group label,
+.modal-vuln-corpo .form-group > label {
+    color: #c8c8e0;
+    font-size: 0.88rem;
+    margin-bottom: 6px;
+    font-weight: 500;
 }
 
 /* Tabela */
@@ -252,10 +311,26 @@ button:disabled {
 }
 
 .btn-add {
-    background-color:var(--purple-dark);
+    background-color: var(--purple-main);
     color: white;
     width: 100%;
     margin-top: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+
+.btn-add:hover {
+    background-color: #9040ff;
+}
+
+.modal-vuln-footer .btn-add {
+    width: auto;
+    margin-top: 0;
+    padding: 10px 22px;
+    border-radius: 8px;
 }
 
 .btn-gerar {
@@ -508,16 +583,23 @@ button:disabled {
 }
 
 /* =========================
+   HEADER
+========================= */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    position: relative;
+}
+
+/* =========================
    LOGO
 ========================= */
 
 .logo img {
   width: 130px;
-  left: 12px;
   display: block;
-  position: relative;
-  top: -14px;
-  z-index: 999;
 }
 
 /* =========================
@@ -525,35 +607,26 @@ button:disabled {
 ========================= */
 
 .search {
-  width: 15%;
-  display: flex;
-  gap: 11px;
-  position: relative;
-  top: -94px;
-  left: 1494px;
-  background: rgba(255, 255, 255, 0.05);
-
-  border: 1px solid rgba(255, 255, 255, 0.08);
-
-  padding: 3px 16px;
-
-  border-radius: 14px;
-  z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 16px;
+    border-radius: 14px;
 }
 
 .search-input {
   background: transparent;
   border: none;
   outline: none;
-
   color: var(--text-main);
-
   width: 220px;
   font-size: 15px;
 }
 
 .search-input::placeholder {
-  color: var(--text-secondary);;
+  color: var(--text-secondary);
 }
 
 .search-btn {
@@ -567,35 +640,38 @@ button:disabled {
 ========================= */
 
 .navbar {
-  width: 82%;
-  position: relative;
-  top: -145px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 60px;
-  backdrop-filter: blur(10px);
-  border-radius: 40px;
-  margin-left: 281px;
-
-  padding: 19px 0;
-
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    padding: 16px 24px;
+    backdrop-filter: blur(10px);
+    border-radius: 40px;
+    margin: 0 24px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .navbar a {
   text-decoration: none;
-
   color: var(--text-secondary);
-  position: relative;
-  right: 107px;
-  top: -2px;
   font-size: 1.3rem;
   font-weight: 400;
-
-  transition: 0.3s ease;;
+  transition: 0.3s ease;
   position: relative;
+}
+
+/* Adicionar responsividade */
+@media (max-width: 768px) {
+    .navbar {
+        flex-wrap: wrap;
+        gap: 16px;
+        border-radius: 12px;
+    }
+    .search {
+        width: 100%;
+        max-width: 280px;
+    }
 }
 
 .navbar a::after {
@@ -616,4 +692,228 @@ button:disabled {
 
 .navbar a:hover::after {
   width: 100%;
+}
+
+/* =========================
+   BOTÃO "ACRESCENTAR VULNERABILIDADE"
+========================= */
+
+.btn-nova-vuln {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, var(--purple-main), #5a1abf);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(123, 46, 255, 0.4);
+  letter-spacing: 0.01em;
+}
+
+.btn-nova-vuln:hover {
+  background: linear-gradient(135deg, #9040ff, #4a0faa);
+  box-shadow: 0 6px 20px rgba(123, 46, 255, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-nova-vuln:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(123, 46, 255, 0.3);
+}
+
+/* =========================
+   MODAL OVERLAY
+========================= */
+
+.modal-fundo {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  align-items: center;
+  justify-content: center;
+  animation: fadeInOverlay 0.2s ease;
+}
+
+.modal-fundo.aberto {
+  display: flex;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* =========================
+   MODAL CAIXA
+========================= */
+
+.modal-vuln-caixa {
+  background: #1a1a2e;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  width: 92%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  animation: slideInModal 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+  overflow: hidden;
+}
+
+@keyframes slideInModal {
+  from { opacity: 0; transform: translateY(-24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Header fixo */
+.modal-vuln-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  flex-shrink: 0;
+}
+
+.modal-vuln-header-titulo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.modal-fechar {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.modal-fechar:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* Corpo com scroll */
+.modal-vuln-corpo {
+  overflow-y: auto;
+  padding: 24px 28px 0;
+  flex: 1;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+}
+
+/* Separadores de seção dentro do modal */
+.modal-secao-titulo {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--purple-main);
+  padding: 10px 0 4px;
+  border-bottom: 1px solid rgba(123, 46, 255, 0.2);
+  margin-top: 6px;
+}
+
+/* Rodapé fixo */
+.modal-vuln-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 28px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  flex-shrink: 0;
+  margin-top: 20px;
+}
+
+.btn-modal-cancelar {
+  padding: 10px 22px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-modal-cancelar:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.25);
+}
+
+/* Campo KEV estilizado */
+.kev-group {
+  grid-column: 1 / -1;
+}
+
+.kev-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px 16px;
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  border-radius: 8px;
+  background: rgba(220, 53, 69, 0.05);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.kev-label:hover {
+  background: rgba(220, 53, 69, 0.1);
+  border-color: rgba(220, 53, 69, 0.5);
+}
+
+.kev-checkbox {
+  width: 18px !important;
+  height: 18px !important;
+  accent-color: #dc3545;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.kev-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  border-radius: 4px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }

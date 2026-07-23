@@ -1,12 +1,25 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
+from flask_cors import CORS
+from flask_jwt_extended import (
+    JWTManager, create_access_token,
+    jwt_required, get_jwt_identity
+)
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from datetime import datetime, timedelta
 import ia
 import banco
 
 app = Flask(__name__)
-CORS(app)
+
+# M3 — JWT: chave secreta e expiração de token (1 dia)
+app.config["JWT_SECRET_KEY"] = "securescope-jwt-secret-2024-mude-em-producao"
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
+jwt = JWTManager(app)
+
+# M3 — CORS aberto para desenvolvimento
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 DB_NAME = 'vulnerabilidades.db'
 
 VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)")
@@ -17,7 +30,13 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
-def registrar_historico(vulnerabilidade_id, acao, responsavel="API System"):
+def registrar_historico(vulnerabilidade_id, acao, responsavel=None):
+    """M3 — responsavel vem do JWT quando disponível, senão usa 'Sistema'."""
+    if responsavel is None:
+        try:
+            responsavel = get_jwt_identity() or "Sistema"
+        except RuntimeError:
+            responsavel = "Sistema"
     conn = get_db_connection()
     data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute('''
@@ -38,6 +57,7 @@ def preparar_banco_para_ia():
     registros antigos que ainda não passaram por essa análise. Roda uma
     vez, na subida da aplicação — não é destrutivo."""
     conn = get_db_connection()
+    banco.criar_tabelas(conn)
     banco.migrar_colunas_contexto_ia(conn)
 
     pendentes = conn.execute(
@@ -62,6 +82,78 @@ def preparar_banco_para_ia():
 preparar_banco_para_ia()
 
 # ─────────────────────────────────────────────
+# M3 — AUTENTICAÇÃO (JWT)
+# ─────────────────────────────────────────────
+
+@app.route('/auth/register', methods=['POST'])
+def registrar_usuario():
+    """Cria um novo usuário. Em produção, esta rota deveria ser protegida
+    por um admin. Por ora, é aberta para facilitar o primeiro acesso."""
+    dados = request.get_json()
+    for campo in ['email', 'senha', 'nome']:
+        if not dados or not dados.get(campo):
+            return jsonify({"erro": f"Campo obrigatório ausente: '{campo}'"}), 400
+
+    email = dados['email'].strip().lower()
+    senha_hash = generate_password_hash(dados['senha'])
+    nome = dados['nome'].strip()
+    role = dados.get('role', 'analista')
+    criado_em = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db_connection()
+    existe = conn.execute("SELECT id FROM usuarios WHERE email = ?", (email,)).fetchone()
+    if existe:
+        conn.close()
+        return jsonify({"erro": "Este e-mail já está cadastrado."}), 409
+
+    conn.execute(
+        "INSERT INTO usuarios (email, senha_hash, nome, role, criado_em) VALUES (?, ?, ?, ?, ?)",
+        (email, senha_hash, nome, role, criado_em)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": f"Usuário '{nome}' criado com sucesso!"}), 201
+
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    """Valida credenciais e retorna um JWT de acesso."""
+    dados = request.get_json()
+    if not dados or not dados.get('email') or not dados.get('senha'):
+        return jsonify({"erro": "E-mail e senha são obrigatórios."}), 400
+
+    email = dados['email'].strip().lower()
+    conn = get_db_connection()
+    usuario = conn.execute("SELECT * FROM usuarios WHERE email = ?", (email,)).fetchone()
+    conn.close()
+
+    if not usuario or not check_password_hash(usuario['senha_hash'], dados['senha']):
+        return jsonify({"erro": "Credenciais inválidas."}), 401
+
+    # identity = email do usuário (fica gravada no token e recuperável via get_jwt_identity())
+    token = create_access_token(identity=usuario['email'])
+    return jsonify({
+        "access_token": token,
+        "nome": usuario['nome'],
+        "email": usuario['email'],
+        "role": usuario['role']
+    }), 200
+
+
+@app.route('/auth/me', methods=['GET'])
+@jwt_required()
+def me():
+    """Retorna os dados do usuário autenticado a partir do token."""
+    email = get_jwt_identity()
+    conn = get_db_connection()
+    usuario = conn.execute("SELECT id, email, nome, role, criado_em FROM usuarios WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    if not usuario:
+        return jsonify({"erro": "Usuário não encontrado."}), 404
+    return jsonify(dict(usuario)), 200
+
+
+# ─────────────────────────────────────────────
 # ROTAS PADRÃO (1 a 7)
 # ─────────────────────────────────────────────
 
@@ -82,6 +174,7 @@ def buscar_vulnerabilidade(id):
     return jsonify(dict(vuln)), 200
 
 @app.route('/vulnerabilidades', methods=['POST'])
+@jwt_required()
 def adicionar_vulnerabilidade():
     dados = request.get_json()
     campos_obrigatorios = ['nome', 'impacto', 'frequencia', 'gravidade']
@@ -191,6 +284,7 @@ def adicionar_vulnerabilidade():
     }), 201
 
 @app.route('/vulnerabilidades/<int:id>/validar', methods=['PUT'])
+@jwt_required()
 def validar_vulnerabilidade(id):
     conn = get_db_connection()
     if not vulnerabilidade_existe(conn, id):
@@ -203,6 +297,7 @@ def validar_vulnerabilidade(id):
     return jsonify({"message": f"Vulnerabilidade {id} validada com sucesso!"}), 200
 
 @app.route('/circuit-breaker/<int:id>', methods=['POST'])
+@jwt_required()
 def acionar_circuit_breaker(id):
     conn = get_db_connection()
     if not vulnerabilidade_existe(conn, id):

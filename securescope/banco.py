@@ -47,6 +47,18 @@ def criar_tabelas(conn):
         )
     ''')
 
+    # M3 — Tabela de usuários para autenticação JWT
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            senha_hash TEXT NOT NULL,
+            nome TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'analista',
+            criado_em TEXT NOT NULL
+        )
+    ''')
+
     conn.commit()
     print("Tabelas criadas/verificadas com sucesso.")
 
@@ -101,6 +113,22 @@ def migrar_colunas_contexto_ia(conn):
             FOREIGN KEY(vulnerabilidade_id) REFERENCES vulnerabilidades(id)
         )
     ''')
+
+    # M2 — Trilha de auditoria enriquecida na tabela historico
+    # Adiciona rastreabilidade de origem e diff de dados (NIST SP 800-53 SI-2(2) / ISO 27001 A.8.8).
+    # ALTER TABLE é idempotente em SQLite — seguro em bancos já existentes.
+    cursor.execute("PRAGMA table_info(historico)")
+    colunas_historico = {linha[1] for linha in cursor.fetchall()}
+
+    colunas_audit = {
+        "ip_origem":       "TEXT NOT NULL DEFAULT ''",
+        "dados_anteriores": "TEXT NOT NULL DEFAULT ''",
+        "dados_novos":     "TEXT NOT NULL DEFAULT ''",
+    }
+    for coluna, definicao in colunas_audit.items():
+        if coluna not in colunas_historico:
+            cursor.execute(f"ALTER TABLE historico ADD COLUMN {coluna} {definicao}")
+            print(f"[migração] Coluna '{coluna}' adicionada em historico.")
 
     conn.commit()
 
