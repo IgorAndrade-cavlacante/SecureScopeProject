@@ -697,4 +697,4 @@ def analise_vulnerabilidade(id):
 if __name__ == '__main__':
     print("Iniciando a API SecureScope com IA...")
     # O app.run deve ser a ÚLTIMA coisa do ficheiro
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
