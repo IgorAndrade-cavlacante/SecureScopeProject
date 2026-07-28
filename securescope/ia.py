@@ -233,12 +233,13 @@ def calcular_prioridade(risk_index_base, fatores):
     prioridade = round(min(prioridade, 100.0), 1)
     return prioridade, explicacao
 
-def correlacionar_historico(conn, categoria, status_ignorados=("Isolada (Circuit Breaker)",)):
+def correlacionar_historico(conn, categoria, usuario_id, status_ignorados=("Isolada (Circuit Breaker)",)):
     """
     Correlação de risco: verifica quantas vulnerabilidades da MESMA categoria
-    já estão registradas (e ainda relevantes, ou seja, não isoladas). Se o
-    padrão se repete, é sinal de falha sistêmica na esteira de desenvolvimento
-    — não é só "mais uma vulnerabilidade", é um problema recorrente.
+    já estão registradas (e ainda relevantes, ou seja, não isoladas) PARA O
+    MESMO USUÁRIO. Se o padrão se repete, é sinal de falha sistêmica na
+    esteira de desenvolvimento — não é só "mais uma vulnerabilidade", é um
+    problema recorrente.
     """
     if categoria == "Geral/Desconhecida":
         return {"ocorrencias": 0, "alerta": False, "mensagem": None}
@@ -246,10 +247,10 @@ def correlacionar_historico(conn, categoria, status_ignorados=("Isolada (Circuit
     placeholders = ",".join("?" for _ in status_ignorados)
     query = f"""
         SELECT COUNT(*) as c FROM vulnerabilidades
-        WHERE categoria = ? AND status NOT IN ({placeholders})
+        WHERE categoria = ? AND usuario_id = ? AND status NOT IN ({placeholders})
     """
     cursor = conn.cursor()
-    cursor.execute(query, (categoria, *status_ignorados))
+    cursor.execute(query, (categoria, usuario_id, *status_ignorados))
     row = cursor.fetchone()
 
     try:
@@ -354,11 +355,11 @@ ORIGENS_VALIDAS = (
     "Pipeline/IaC",
 )
 
-def correlacionar_por_ativo(conn, ativo, status_ignorados=("Isolada (Circuit Breaker)",)):
+def correlacionar_por_ativo(conn, ativo, usuario_id, status_ignorados=("Isolada (Circuit Breaker)",)):
     """
     Correlação de risco por ATIVO: se o mesmo sistema/API/serviço já acumula
-    várias vulnerabilidades em aberto, isso é sinal de um ativo crítico que
-    concentra risco — não só "mais uma falha isolada".
+    várias vulnerabilidades em aberto (PARA O MESMO USUÁRIO), isso é sinal de
+    um ativo crítico que concentra risco — não só "mais uma falha isolada".
     """
     if not ativo or not ativo.strip():
         return {"ocorrencias": 0, "alerta": False, "mensagem": None}
@@ -366,10 +367,10 @@ def correlacionar_por_ativo(conn, ativo, status_ignorados=("Isolada (Circuit Bre
     placeholders = ",".join("?" for _ in status_ignorados)
     query = f"""
         SELECT COUNT(*) as c FROM vulnerabilidades
-        WHERE ativo = ? AND status NOT IN ({placeholders})
+        WHERE ativo = ? AND usuario_id = ? AND status NOT IN ({placeholders})
     """
     cursor = conn.cursor()
-    cursor.execute(query, (ativo, *status_ignorados))
+    cursor.execute(query, (ativo, usuario_id, *status_ignorados))
     row = cursor.fetchone()
 
     try:
@@ -436,12 +437,12 @@ def calcular_dread(gravidade, frequencia, fatores):
 # em aberto e concentração de risco por ativo — e a IA age de forma
 # PROATIVA gerando alertas sozinha, sem o analista precisar perguntar.
 
-def gerar_alertas_monitoramento(conn, dias_limite=7, prioridade_minima=80):
+def gerar_alertas_monitoramento(conn, usuario_id, dias_limite=7, prioridade_minima=80):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT nome, data, prioridade, ativo FROM vulnerabilidades
-        WHERE status = 'Aberta' AND prioridade >= ?
-    """, (prioridade_minima,))
+        WHERE status = 'Aberta' AND prioridade >= ? AND usuario_id = ?
+    """, (prioridade_minima, usuario_id))
     linhas = cursor.fetchall()
 
     alertas = []
@@ -469,9 +470,9 @@ def gerar_alertas_monitoramento(conn, dias_limite=7, prioridade_minima=80):
     # Concentração de risco por ativo (top 1)
     cursor.execute("""
         SELECT ativo, COUNT(*) as total FROM vulnerabilidades
-        WHERE status != 'Isolada (Circuit Breaker)' AND ativo != ''
+        WHERE status != 'Isolada (Circuit Breaker)' AND ativo != '' AND usuario_id = ?
         GROUP BY ativo ORDER BY total DESC LIMIT 1
-    """)
+    """, (usuario_id,))
     top_ativo = cursor.fetchone()
     if top_ativo:
         try:
@@ -486,23 +487,26 @@ def gerar_alertas_monitoramento(conn, dias_limite=7, prioridade_minima=80):
 
     return alertas
 
-def aprender_com_historico(conn):
+def aprender_com_historico(conn, usuario_id):
     """
-    Lê o banco, pega vulnerabilidades validadas e calcula estatísticas usando numpy.
-    Retorna médias, máximos, mínimos e risco médio geral calculado com a fórmula do Risk Index™.
-    Achados por origem e alertas de monitoramento são calculados sempre,
-    independente de já existir histórico validado ou não.
+    Lê o banco, pega vulnerabilidades validadas DO USUÁRIO ATUAL e calcula
+    estatísticas usando numpy. Retorna médias, máximos, mínimos e risco médio
+    geral calculado com a fórmula do Risk Index™. Achados por origem e
+    alertas de monitoramento são calculados sempre, independente de já
+    existir histórico validado ou não.
     """
     try:
         cursor = conn.cursor()
 
         # Achados por origem — visibilidade de "quantas ferramentas diferentes"
-        # estão alimentando o painel (considera TODAS as vulnerabilidades,
-        # não só as validadas, pra dar uma visão real de ingestão multi-fonte).
+        # estão alimentando o painel (considera TODAS as vulnerabilidades do
+        # usuário, não só as validadas, pra dar uma visão real de ingestão
+        # multi-fonte).
         cursor.execute("""
             SELECT origem, COUNT(*) as total FROM vulnerabilidades
+            WHERE usuario_id = ?
             GROUP BY origem ORDER BY total DESC
-        """)
+        """, (usuario_id,))
         achados_por_origem = {}
         for linha_origem in cursor.fetchall():
             try:
@@ -511,12 +515,13 @@ def aprender_com_historico(conn):
                 origem, total = linha_origem[0], linha_origem[1]
             achados_por_origem[origem or "Manual/Pentest"] = total
 
-        # Monitoramento contínuo (proativo) olha vulnerabilidades ABERTAS,
-        # então não depende de já existir histórico validado.
-        alertas_monitoramento = gerar_alertas_monitoramento(conn)
+        # Monitoramento contínuo (proativo) olha vulnerabilidades ABERTAS do
+        # usuário, então não depende de já existir histórico validado.
+        alertas_monitoramento = gerar_alertas_monitoramento(conn, usuario_id)
 
         cursor.execute(
-            "SELECT impacto, frequencia, gravidade, score FROM vulnerabilidades WHERE status = 'Validada'"
+            "SELECT impacto, frequencia, gravidade, score FROM vulnerabilidades "
+            "WHERE status = 'Validada' AND usuario_id = ?", (usuario_id,)
         )
         linhas = cursor.fetchall()
 

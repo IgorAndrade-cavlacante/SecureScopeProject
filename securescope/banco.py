@@ -1,23 +1,35 @@
 # banco.py
-import sqlite3
+import db
 from datetime import datetime
 
 VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)")  # corrigido
 
-def conectar_banco(nome_banco="vulnerabilidades.db"):
-    try:
-        conn = sqlite3.connect(nome_banco)
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
-    except sqlite3.Error as e:
-        raise RuntimeError(f"Erro ao conectar ao banco: {e}")
+def conectar_banco(nome_banco=None):
+    """Mantido por compatibilidade com o bloco __main__ deste arquivo.
+    'nome_banco' não é mais usado — a conexão agora é sempre com o Postgres
+    do Supabase, configurado via variável de ambiente DATABASE_URL (ver db.py)."""
+    return db.get_db_connection()
 
 def criar_tabelas(conn):
     cursor = conn.cursor()
 
+    # M3 — Tabela de usuários para autenticação JWT.
+    # Criada ANTES de vulnerabilidades porque a coluna usuario_id (adicionada
+    # na migração abaixo, ver COLUNAS_IA_CONTEXTO) referencia esta tabela.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            senha_hash TEXT NOT NULL,
+            nome TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'analista',
+            criado_em TEXT NOT NULL
+        )
+    ''')
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS vulnerabilidades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             nome TEXT NOT NULL,
             impacto REAL NOT NULL CHECK(impacto BETWEEN 0 AND 100),
             frequencia REAL NOT NULL CHECK(frequencia BETWEEN 0 AND 100),
@@ -30,7 +42,7 @@ def criar_tabelas(conn):
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS historico (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             vulnerabilidade_id INTEGER,
             acao TEXT NOT NULL,
             responsavel TEXT NOT NULL,
@@ -41,21 +53,9 @@ def criar_tabelas(conn):
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS relatorios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             data_geracao TEXT NOT NULL,
             conteudo TEXT NOT NULL
-        )
-    ''')
-
-    # M3 — Tabela de usuários para autenticação JWT
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL UNIQUE,
-            senha_hash TEXT NOT NULL,
-            nome TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'analista',
-            criado_em TEXT NOT NULL
         )
     ''')
 
@@ -63,7 +63,7 @@ def criar_tabelas(conn):
     print("Tabelas criadas/verificadas com sucesso.")
 
 # Colunas novas usadas pelo motor de priorização/correlação da IA.
-# ALTER TABLE ... ADD COLUMN é seguro em SQLite e não apaga dados existentes.
+# ALTER TABLE ... ADD COLUMN é seguro em Postgres e não apaga dados existentes.
 COLUNAS_IA_CONTEXTO = {
     "exposta_internet":         "INTEGER NOT NULL DEFAULT 0",
     "exploit_publico":          "INTEGER NOT NULL DEFAULT 0",
@@ -83,6 +83,10 @@ COLUNAS_IA_CONTEXTO = {
     # M2 — SLAs formais por nível de prioridade (NIST SP 800-53 SI-2 / ISO 27001 A.8.8)
     "sla_prazo_dias":           "INTEGER NOT NULL DEFAULT 90",
     "sla_prioridade":           "TEXT NOT NULL DEFAULT 'P3'",
+    # Multi-tenant — cada vulnerabilidade passa a pertencer a um usuário.
+    # Sem valor padrão fixo: registros antigos ficam com usuario_id NULL e
+    # devem ser atribuídos manualmente a um usuário (ver plano de migração).
+    "usuario_id":               "INTEGER REFERENCES usuarios(id)",
 }
 
 def migrar_colunas_contexto_ia(conn):
@@ -90,8 +94,11 @@ def migrar_colunas_contexto_ia(conn):
     vulnerabilidades caso ainda não existam. Idempotente e não destrutivo:
     pode ser chamada toda vez que a aplicação sobe."""
     cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(vulnerabilidades)")
-    colunas_existentes = {linha[1] for linha in cursor.fetchall()}
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'vulnerabilidades'"
+    )
+    colunas_existentes = {linha["column_name"] for linha in cursor.fetchall()}
 
     for coluna, definicao in COLUNAS_IA_CONTEXTO.items():
         if coluna not in colunas_existentes:
@@ -102,7 +109,7 @@ def migrar_colunas_contexto_ia(conn):
     # Permite gerar evidência auditável exigida por ISO 27001 A.8.8 e NIST CA-7.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sla_vulnerabilidades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             vulnerabilidade_id INTEGER NOT NULL,
             nivel_sla TEXT NOT NULL,
             prazo_dias INTEGER NOT NULL,
@@ -116,9 +123,12 @@ def migrar_colunas_contexto_ia(conn):
 
     # M2 — Trilha de auditoria enriquecida na tabela historico
     # Adiciona rastreabilidade de origem e diff de dados (NIST SP 800-53 SI-2(2) / ISO 27001 A.8.8).
-    # ALTER TABLE é idempotente em SQLite — seguro em bancos já existentes.
-    cursor.execute("PRAGMA table_info(historico)")
-    colunas_historico = {linha[1] for linha in cursor.fetchall()}
+    # ALTER TABLE é idempotente em Postgres — seguro em bancos já existentes.
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'historico'"
+    )
+    colunas_historico = {linha["column_name"] for linha in cursor.fetchall()}
 
     colunas_audit = {
         "ip_origem":       "TEXT NOT NULL DEFAULT ''",
@@ -149,10 +159,11 @@ def inserir_vulnerabilidade(conn, nome, impacto, frequencia, gravidade, status="
 
     cursor.execute('''
         INSERT INTO vulnerabilidades (nome, impacto, frequencia, gravidade, score, status, data)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
     ''', (nome, impacto, frequencia, gravidade, score, status, data_atual))
 
-    vulnerabilidade_id = cursor.lastrowid
+    vulnerabilidade_id = cursor.fetchone()["id"]
     conn.commit()
 
     print(f"Vulnerabilidade '{nome}' registrada!")
@@ -166,7 +177,7 @@ def inserir_historico(conn, vulnerabilidade_id, acao, responsavel):
 
     cursor.execute('''
         INSERT INTO historico (vulnerabilidade_id, acao, responsavel, data)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
     ''', (vulnerabilidade_id, acao, responsavel, data_atual))
 
     conn.commit()
@@ -186,8 +197,8 @@ if __name__ == '__main__':
     criar_tabelas(conexao)
     migrar_colunas_contexto_ia(conexao)
 
-    total = conexao.execute("SELECT COUNT(*) FROM vulnerabilidades").fetchone()[0]
-    print(f"Banco pronto. {total} vulnerabilidade(s) já cadastrada(s).")
+    total = conexao.execute("SELECT COUNT(*) FROM vulnerabilidades").fetchone()["count"]
+    print(f"Banco pronto (Postgres/Supabase). {total} vulnerabilidade(s) já cadastrada(s).")
     print("Para usar o sistema, rode: python app.py")
 
     conexao.close()

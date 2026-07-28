@@ -1,116 +1,62 @@
-/* =========================
-   RESET
-========================= */
-
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-/* =========================
-   ROOT
-========================= */
-
 :root {
   --bg-main: #0a0a0f;
-
   --purple-main: #7b2eff;
   --purple-dark: #4b008f;
   --purple-light: #b388ff;
-
   --yellow-main: #ffd60a;
   --yellow-hover: #ffc300;
-
   --text-main: #f5f5f5;
   --text-secondary: #a1a1b5;
-
-  --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
-
   --bg-home: url("/images/bghome.webp");
 }
 
-/* =========================
-   BODY
-========================= */
-
 body {
-  font-family: "Inter", sans-serif;
-
-  background: var(--bg-main);
-  background-image: var(--bg-home);
-
-  background-repeat: no-repeat;
-  background-size: cover;
-  background-position: center;
-
+  min-height: 100svh;
+  overflow-x: hidden;
+  background: var(--bg-main) var(--bg-home) center / cover no-repeat;
   color: var(--text-main);
-
-  min-height: 100vh;
-  overflow: hidden;
-  
+  font-family: "Inter", sans-serif;
 }
 
-/* =========================
-   HEADER
-========================= */
-
 .header {
-  width: 100%;
-
-  padding: 25px 8%;
-
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  padding: 24px 8% 12px;
 }
-
-/* =========================
-   LOGO
-========================= */
 
 .logo img {
-  width: 130px;
-  margin-left: -120px;
   display: block;
-  position: relative;
-  top: -20px;
-  z-index: 999;
+  width: 48px;
 }
-
-/* =========================
-   SEARCH
-========================= */
 
 .search {
   display: flex;
   gap: 10px;
-  position: relative;
-  top: -13px;;
-  left: 30px;
+  padding: 9px 16px;
   background: rgba(255, 255, 255, 0.05);
-
   border: 1px solid rgba(255, 255, 255, 0.08);
-
-  padding: 10px 16px;
-
   border-radius: 14px;
-  z-index: 999;
 }
 
 .search-input {
-  background: transparent;
+  width: 220px;
   border: none;
   outline: none;
-
+  background: transparent;
   color: var(--text-main);
-
-  width: 220px;
   font-size: 15px;
 }
 
 .search-input::placeholder {
-  color: var(--text-secondary);;
+  color: var(--text-secondary);
 }
 
 .search-btn {
@@ -119,43 +65,27 @@ body {
   justify-content: center;
 }
 
-/* =========================
-   NAVBAR
-========================= */
-
 .navbar {
-  width: 80%;
-  position: relative;
-  top: -135px;
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 60px;
+  justify-content: center;
+  width: min(84%, 960px);
+  gap: clamp(20px, 4vw, 56px);
+  margin: 0 auto;
+  padding: 16px 24px;
   backdrop-filter: blur(10px);
-  border-radius: 40px;
-  margin-left: 300px;
-
-  padding: 20px 0;
-
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-
- 
+  border-radius: 40px;
 }
 
 .navbar a {
-  text-decoration: none;
-
-  color: var(--text-secondary);
   position: relative;
-  right: 110px;
-
+  color: var(--text-secondary);
   font-size: 1.2rem;
   font-weight: 500;
-
-  transition: 0.3s ease;
-
-  position: relative;
+  text-decoration: none;
+  transition: color 0.3s ease;
 }
 
 .navbar a:hover {
@@ -163,109 +93,70 @@ body {
 }
 
 .navbar a::after {
-  content: "";
-
   position: absolute;
-
-  left: 0;
   bottom: -6px;
-
-  width: 0%;
+  left: 0;
+  width: 0;
   height: 2px;
-
   background: var(--purple-main);
-
-  transition: 0.3s ease;
+  content: "";
+  transition: width 0.3s ease;
 }
 
 .navbar a:hover::after {
   width: 100%;
 }
 
-/* =========================
-   HERO
-========================= */
-
 .hero {
   width: 100%;
-
-  padding: 120px 8%;
+  padding: clamp(72px, 10vw, 140px) 8% 64px;
 }
 
 .hero-text {
-  max-width: 700px;;;
+  max-width: 700px;
 }
 
-/* TITLE */
-
 .hero-text h1 {
-  font-size: 5rem;
-  line-height: 1;
-  left: -90px;
-  position: relative;
-  top: -190px;;
-
   font-family: "Orbitron", sans-serif;
+  font-size: clamp(2.9rem, 6vw, 5rem);
+  line-height: 1;
 }
 
 .hero-text strong {
   display: block;
-  position: relative;
+  margin-top: 14px;
   color: var(--yellow-main);
-  top: 20px;
 }
 
-/* PARAGRAPH */
-
 .hero-text p {
+  margin: 28px 0 36px;
   color: var(--text-secondary);
   font-family: "VT323", monospace;
   font-size: 1.6rem;
-  line-height: 2.9;
-  left:  50px;
-  position: relative;
-  top:-180px;
-
-  margin-bottom: 40px;
+  line-height: 1.5;
 }
-
-/* =========================
-   BUTTONS
-========================= */
 
 .hero-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 20px;
-  position: relative;
-  right: -25px;
-  top: -150px;
 }
 
 .btn {
-  border: none;
-  outline: none;
-
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 16px 30px;
-
   border-radius: 14px;
-
-  font-size: 1rem;
+  font-size: 17px;
   font-weight: 700;
-
-  cursor: pointer;
-
+  text-decoration: none;
   transition: 0.3s ease;
 }
-
-/* PRIMARY */
 
 .btn-primary {
   background: var(--yellow-main);
   color: #000;
-  font-size: 17px;
-  width: 22%;
-  position: relative;
-  top: -50px
 }
 
 .btn-primary:hover {
@@ -273,19 +164,37 @@ body {
   transform: translateY(-2px);
 }
 
-/* SECONDARY */
-
 .btn-secondary {
   background: var(--purple-main);
   color: white;
-  font-size: 17px;
-  width: 22%;
-  position: relative;
-  right: 100px;
-  top: -50px;
 }
 
 .btn-secondary:hover {
   background: var(--purple-dark);
   transform: translateY(-2px);
+}
+
+@media (max-width: 680px) {
+  .header {
+    padding: 20px 6%;
+  }
+
+  .search-input {
+    width: 140px;
+  }
+
+  .navbar {
+    width: calc(100% - 32px);
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    border-radius: 18px;
+  }
+
+  .navbar a {
+    font-size: 1rem;
+  }
+
+  .hero {
+    padding: 72px 8% 48px;
+  }
 }

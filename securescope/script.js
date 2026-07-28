@@ -1,4 +1,4 @@
-const API_URL = 'http://127.0.0.1:5000';
+const API_URL = window.location.origin;
 
 // M3 — Helper: retorna headers com Bearer token se o usuário estiver logado
 function getAuthHeaders(extra = {}) {
@@ -15,8 +15,8 @@ function atualizarBotaoAuth() {
     const nome = localStorage.getItem('ss_nome');
     if (nome) {
         btn.innerHTML = nome;
-        btn.title = 'Clique para sair';
-        btn.onclick = fazerLogout;
+        btn.title = 'Clique para abrir o menu';
+        btn.onclick = (e) => { e.stopPropagation(); toggleMenuAuth(); };
         btn.style.background = 'rgba(0, 200, 81, 0.15)';
         btn.style.borderColor = 'rgba(0, 200, 81, 0.5)';
         btn.style.color = '#00C851';
@@ -27,12 +27,39 @@ function atualizarBotaoAuth() {
         btn.style.background = 'rgba(123, 46, 255, 0.2)';
         btn.style.borderColor = 'rgba(123, 46, 255, 0.6)';
         btn.style.color = '#c4a1ff';
+        fecharMenuAuth();
     }
 }
 
+// M3 — Abre/fecha o menu dropdown (Configurações / Sair) do usuário logado
+function toggleMenuAuth() {
+    const menu = document.getElementById('menu-auth');
+    if (!menu) return;
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
+function fecharMenuAuth() {
+    const menu = document.getElementById('menu-auth');
+    if (menu) menu.style.display = 'none';
+}
+
+// Fecha o menu ao clicar fora dele
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('auth-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) fecharMenuAuth();
+});
+
+// Configurações — sem funcionalidade por enquanto (fora do escopo deste
+// integrante do time); só fecha o menu.
+function abrirConfiguracoes() {
+    fecharMenuAuth();
+    mostrarToast('Configurações ainda não implementadas.', 'info');
+}
+
 function abrirModalAuth() {
-    // Se já está logado, clique no botão faz logout direto
-    if (localStorage.getItem('ss_token')) { fazerLogout(); return; }
+    // Se já está logado, o clique no botão agora abre o menu dropdown
+    // (Configurações / Sair) em vez de deslogar direto.
+    if (localStorage.getItem('ss_token')) { toggleMenuAuth(); return; }
     const fundo = document.getElementById('modal-auth-fundo');
     fundo.style.display = 'flex';
     document.getElementById('auth-email').focus();
@@ -84,6 +111,7 @@ async function fazerLogin() {
         localStorage.setItem('ss_email', data.email);
         fecharModalAuth();
         atualizarBotaoAuth();
+        carregarDadosProtegidos(); // M3 — carrega os dados do usuário recém-logado
         mostrarToast(`Bem-vindo, ${data.nome}!`, 'sucesso');
     } catch (e) {
         erroEl.innerText = 'Erro ao conectar com o servidor.';
@@ -125,7 +153,39 @@ function fazerLogout() {
     localStorage.removeItem('ss_nome');
     localStorage.removeItem('ss_email');
     atualizarBotaoAuth();
+    mostrarEstadoDeslogado(); // M3 — limpa da tela os dados do usuário anterior
     mostrarToast('Sessão encerrada.', 'info');
+}
+
+// M3 — Dispara os 4 carregamentos que dependem de login (dados são por
+// usuário). Chamado no window.onload (se já houver token) e logo após um
+// login bem-sucedido.
+function carregarDadosProtegidos() {
+    carregarVulnerabilidades();
+    carregarInsightsIA();
+    carregarSLAWidget();
+    carregarKPIsGovernance();
+}
+
+// M3 — Estado exibido quando ninguém está logado: tabela vazia com CTA de
+// login, em vez de deixar os painéis girando em "carregando" pra sempre.
+function mostrarEstadoDeslogado() {
+    const tbody = document.getElementById('tabelaCorpo');
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="tabela-vazia">
+                    Faça login para ver suas vulnerabilidades.
+                </td>
+            </tr>
+        `;
+    }
+    const iaLoading = document.getElementById('ia-loading');
+    if (iaLoading) iaLoading.innerText = 'Faça login para ver os insights da IA.';
+    const iaStats = document.getElementById('ia-stats-content');
+    if (iaStats) iaStats.style.display = 'none';
+    const slaBox = document.getElementById('sla-status-box');
+    if (slaBox) slaBox.style.display = 'none';
 }
 
 // Ícones SVG inline (herdam a cor via currentColor), substituem os emojis
@@ -150,12 +210,18 @@ let indiceWizard = 0;
 let respostasWizard = {};
 
 window.onload = () => {
-    carregarVulnerabilidades();
-    carregarInsightsIA();
     carregarOrigens();
-    carregarSLAWidget();
-    carregarKPIsGovernance();
     atualizarBotaoAuth(); // M3 — restaura estado do login do localStorage
+
+    // M3 — as rotas de dados (vulnerabilidades, insights, SLA, governança)
+    // agora exigem login, já que os dados são por usuário. Só carrega se
+    // já existir um token salvo; senão deixa o painel no estado vazio
+    // (ver mensagens em atualizarBotaoAuth/fazerLogin).
+    if (localStorage.getItem('ss_token')) {
+        carregarDadosProtegidos();
+    } else {
+        mostrarEstadoDeslogado();
+    }
 
     // Abre modal de auth automaticamente quando o usuário vem da Home
     // via ?auth=login ou ?auth=registro (e ainda não está logado)
@@ -224,7 +290,9 @@ async function carregarVulnerabilidades(endpoint = '/vulnerabilidades') {
 
     endpointAtual = endpoint;
 
-    const response = await fetch(`${API_URL}${endpoint}`);
+    const response = await fetch(`${API_URL}${endpoint}`, {
+        headers: getAuthHeaders()  // M3 — rota agora exige token (isolamento por usuário)
+    });
 
     const dados = await response.json();
 
@@ -542,7 +610,9 @@ async function carregarInsightsIA() {
 
     try {
 
-        const res = await fetch(`${API_URL}/ia/insights`);
+        const res = await fetch(`${API_URL}/ia/insights`, {
+            headers: getAuthHeaders()  // M3 — rota agora exige token
+        });
 
         const dados = await res.json();
 
@@ -646,9 +716,9 @@ async function gerarRelatorio() {
 
         // M5 — Buscar dados de 3 endpoints em paralelo
         const [resVulns, resInsights, resSlas] = await Promise.all([
-            fetch(`${API_URL}/relatorio`),
-            fetch(`${API_URL}/ia/insights`),
-            fetch(`${API_URL}/sla/status`)
+            fetch(`${API_URL}/relatorio`, { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/ia/insights`, { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/sla/status`, { headers: getAuthHeaders() })
         ]);
 
         const dados    = await resVulns.json();
@@ -845,7 +915,9 @@ async function gerarRelatorio() {
 async function abrirAnaliseIA(id) {
 
     try {
-        const res = await fetch(`${API_URL}/vulnerabilidades/${id}/analise`);
+        const res = await fetch(`${API_URL}/vulnerabilidades/${id}/analise`, {
+            headers: getAuthHeaders()  // M3 — rota agora exige token
+        });
 
         if (!res.ok) {
             mostrarToast('Não foi possível carregar a análise.', 'erro');
@@ -922,7 +994,9 @@ document.getElementById('modal-analise-fundo').addEventListener('click', (e) => 
 // ─────────────────────────────────────────────
 async function carregarSLAWidget() {
     try {
-        const res = await fetch(`${API_URL}/sla/status`);
+        const res = await fetch(`${API_URL}/sla/status`, {
+            headers: getAuthHeaders()  // M3 — rota agora exige token
+        });
         if (!res.ok) return;
         const dados = await res.json();
 
@@ -967,8 +1041,8 @@ async function carregarSLAWidget() {
 async function carregarKPIsGovernance() {
     try {
         const [resMat, resKpi] = await Promise.all([
-            fetch(`${API_URL}/governance/maturity`),
-            fetch(`${API_URL}/governance/kpis`)
+            fetch(`${API_URL}/governance/maturity`, { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/governance/kpis`, { headers: getAuthHeaders() })
         ]);
         
         if (!resMat.ok || !resKpi.ok) return;

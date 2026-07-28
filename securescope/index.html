@@ -50,17 +50,46 @@
     <a href="#">About Us</a>
     <a href= "/rate/Rate.html" class="rate">Rate us</a>
 
-    <!-- M3 — Botão de autenticação JWT -->
-    <button id="btn-auth" onclick="abrirModalAuth()" style="
-        background: rgba(123, 46, 255, 0.2);
-        border: 1px solid rgba(123, 46, 255, 0.6);
-        color: #c4a1ff;
-        padding: 7px 18px;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: background 0.2s ease;
-    ">Entrar</button>
+    <!-- M3 — Botão de autenticação JWT + menu dropdown (Sair / Configurações) -->
+    <div id="auth-wrapper" style="position: relative; display: inline-block;">
+        <button id="btn-auth" onclick="abrirModalAuth()" style="
+            background: rgba(123, 46, 255, 0.2);
+            border: 1px solid rgba(123, 46, 255, 0.6);
+            color: #c4a1ff;
+            padding: 7px 18px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        ">Entrar</button>
+
+        <div id="menu-auth" style="
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 160px;
+            background: #1a1a2e;
+            border: 1px solid rgba(123, 46, 255, 0.4);
+            border-radius: 10px;
+            padding: 6px;
+            z-index: 50;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+        ">
+            <button onclick="abrirConfiguracoes()" style="
+                display: flex; align-items: center; gap: 8px; width: 100%;
+                background: none; border: none; color: var(--text-secondary, #a1a1b5);
+                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
+                cursor: pointer; text-align: left;
+            ">Configurações</button>
+            <button onclick="fazerLogout()" style="
+                display: flex; align-items: center; gap: 8px; width: 100%;
+                background: none; border: none; color: #ff6b6b;
+                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
+                cursor: pointer; text-align: left;
+            ">Sair</button>
+        </div>
+    </div>
 
   </nav>
 

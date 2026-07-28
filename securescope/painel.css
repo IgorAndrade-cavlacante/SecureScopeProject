@@ -598,7 +598,8 @@ button:disabled {
 ========================= */
 
 .logo img {
-  width: 130px;
+  width: 48px;
+  height: auto;
   display: block;
 }
 
