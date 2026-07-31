@@ -32,9 +32,6 @@ def vulnerabilidade_existe(conn, id):
     ).fetchone()
     return result is not None
 
-# ─────────────────────────────────────────────
-# ROTAS PADRÃO (1 a 7)
-# ─────────────────────────────────────────────
 
 @app.route('/vulnerabilidades', methods=['GET'])
 def listar_vulnerabilidades():
@@ -117,9 +114,7 @@ def ver_historico(id):
     conn.close()
     return jsonify([dict(h) for h in historico]), 200
 
-# ─────────────────────────────────────────────
-# ROTAS DE IA (Devem estar antes do app.run)
-# ─────────────────────────────────────────────
+
 
 @app.route('/ia/sugerir', methods=['POST'])
 def sugerir_valores_ia():
@@ -135,9 +130,7 @@ def insights_ia():
     conn.close()
     return jsonify(insights)
 
-# ─────────────────────────────────────────────
-# INICIALIZAÇÃO
-# ─────────────────────────────────────────────
+
 
 if __name__ == '__main__':
     print("Iniciando a API SecureScope com IA...")

@@ -41,11 +41,11 @@ body {
 .card {
     background: var(--black-gradient);
     max-width: 412px;
-    top: 30px ;
+    top: -35px ;
     padding: 32px;
     border-radius: 30px;
     position: relative;
-    right: -450px ;
+    right: -225px ;
 
 }
 
