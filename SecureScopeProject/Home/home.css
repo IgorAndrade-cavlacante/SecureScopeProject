@@ -1,0 +1,221 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-main: #0a0a0f;
+  --purple-main: #7b2eff;
+  --purple-dark: #4b008f;
+  --purple-light: #b388ff;
+  --yellow-main: #ffd60a;
+  --yellow-hover: #ffc300;
+  --text-main: #f5f5f5;
+  --text-secondary: #a1a1b5;
+  --bg-home: url("/SecureScopeProject/images/bghome.webp");
+}
+
+body {
+  min-height: 100svh;
+  overflow-x: hidden;
+  background: var(--bg-main) var(--bg-home) center / cover no-repeat;
+  color: var(--text-main);
+  font-family: "Inter", sans-serif;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 24px 8% 12px;
+}
+
+.logo img {
+  display: block;
+  position: relative;
+  left: -110px;
+  top: -20px;
+  width: 150px;
+}
+
+.search {
+  display: flex;
+  position: relative;
+  right: -40px;
+  top: -15px;
+  gap: 10px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  z-index:999;
+}
+
+.search-input {
+  width: 220px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 15px;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navbar {
+  display: flex;
+  position: relative;
+  top: -130px;
+  left: 42px;
+  align-items: center;
+  justify-content: center;
+  width: min(84%, 1600px);
+  gap: clamp(20px, 4vw, 56px);
+  margin: 0 auto;
+  padding: 16px 24px;
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+}
+
+.navbar a {
+  position: relative;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  left: -100px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.navbar a:hover {
+  color: var(--purple-light);
+}
+
+.navbar a::after {
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--purple-main);
+  content: "";
+  transition: width 0.3s ease;
+}
+
+.navbar a:hover::after {
+  width: 100%;
+}
+
+.hero {
+  width: 100%;
+  padding: clamp(72px, 10vw, 140px) 8% 64px;
+}
+
+.hero-text {
+  max-width: 700px;
+}
+
+.hero-text h1 {
+  position: relative;
+  top: -240px;
+  left: -50px;
+  font-family: "Orbitron", sans-serif;
+  font-size: clamp(2.9rem, 6vw, 5rem);
+  line-height: 1;
+}
+
+.hero-text strong {
+  display: block;
+  position: relative;
+  margin-top: 14px;
+  color: var(--yellow-main);
+}
+
+.hero-text p {
+  margin: 28px 0 36px;
+  color: var(--text-secondary);
+  font-family: "VT323", monospace;
+  font-size: 2.0rem;
+  line-height: 1.5;
+  position: relative;
+  top: -270px;
+  right: -50px;
+}
+
+.hero-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.btn {
+  display: inline-flex;
+  position: relative;
+  
+  align-items: center;
+  justify-content: center;
+  padding: 16px 30px;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: 0.3s ease;
+}
+
+.btn-primary {
+  background: var(--yellow-main);
+  color: #000;
+}
+
+.btn-primary:hover {
+  background: var(--yellow-hover);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: var(--purple-main);
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: var(--purple-dark);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 680px) {
+  .header {
+    padding: 20px 6%;
+  }
+
+  .search-input {
+    width: 140px;
+  }
+
+  .navbar {
+    width: calc(100% - 32px);
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    border-radius: 18px;
+  }
+
+  .navbar a {
+    font-size: 1rem;
+  }
+
+  .hero {
+    padding: 72px 8% 48px;
+  }
+}

@@ -1,0 +1,942 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+
+:root {
+  --dark-blue: #262e38;
+    --light-gray:#969fad;
+    --medium-gray: #7c8798;
+    --orange:#fc7614;
+    --very-dark-blue: #131518;
+    --white:#fff;
+    --black-gradient:radial-gradient(98.96% 98.96% at 50% 0%, #232a34 0%, #181e27 100%);
+    --bg-main: #0a0a0f;
+    --purple-main: #7b2eff;
+    --purple-dark: #4b008f;
+     --purple-light: #b388ff;
+     --yellow-main: #ffd60a;
+     --yellow-hover: #ffc300;
+    --text-main: #f5f5f5;
+    --text-secondary: #a1a1b5;
+    --bg-painel: url("/images/bgpainel.webp");
+    --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
+}
+
+
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+
+    background: var(--bg-main);
+    background-image: var(--bg-painel);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+    margin: 0;
+    padding: 20px;
+}
+
+
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: var(--black-gradient);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+h1,
+h2 {
+    color: var(--text-main);
+}
+
+/* Ícones (substituem os emojis antigos, herdam a cor do texto via currentColor) */
+
+.icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vertical-align: -3px;
+}
+
+.icon-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid var(--rgb(255, 255, 255, 0.1));
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+/* Painel IA */
+
+.painel-ia {
+    background: var(--dark-blue);
+    border-left: 5px solid var(--purple-main);
+    padding: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 25px;
+    border-radius: 0 8px 8px 0;
+    font-size: 14px;
+}
+
+.painel-ia h3 {
+    margin-top: 0;
+    color: var(--purple-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ia-stats {
+    display: flex;
+    gap: 20px;
+    color: var(--text-secondary);
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.ia-stat-box {
+    background: var(--dark-blue);
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--purple-dark);
+    flex: 1;
+    min-width: 150px;
+    text-align: center;
+}
+
+.ia-stat-box strong {
+    display: block;
+    font-size: 18px;
+    color: var(--text-main);
+    margin-top: 5px;
+}
+
+/* Monitoramento Contínuo (IA proativa) */
+
+#ia-monitoramento {
+    margin-top: 12px;
+    background: rgba(220, 53, 69, 0.12);
+    border: 1px solid #dc3545;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text-main);
+}
+
+#ia-monitoramento strong {
+    color: #dc3545;
+}
+
+#ia-alertas-lista {
+    margin: 6px 0 0 0;
+    padding-left: 0;
+    list-style: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+#ia-alertas-lista li {
+    margin-bottom: 6px;
+    align-items: flex-start;
+}
+
+#ia-alertas-lista li .icon {
+    margin-top: 2px;
+}
+
+/* M2 — SLA Widget */
+
+.sla-widget {
+    margin-top: 10px;
+    background: rgba(255, 193, 7, 0.10);
+    border: 1px solid rgba(255, 193, 7, 0.50);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text-main);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sla-widget strong {
+    color: #ffc107;
+    font-size: 13px;
+}
+
+.sla-criticos-badge {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 0.5px;
+}
+
+.sla-lista-texto {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Sugestão IA */
+
+#ia-sugestao {
+    display: none;
+    grid-column: 1 / -1;
+    background: var(--dark-blue);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--purple-light);
+    margin-bottom: 10px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Form */
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+input, select {
+    padding: 10px 12px;
+    border: 1px solid #3a3a5a;
+    border-radius: 6px;
+    background-color: #1e1e35;
+    color: #e8e8f0;
+    font-size: 0.93rem;
+    transition: border-color 0.2s;
+    width: 100%;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--purple-main);
+    box-shadow: 0 0 0 2px rgba(123, 46, 255, 0.2);
+}
+
+input::placeholder {
+    color: #6e6e90;
+}
+
+select option {
+    background-color: #1e1e35;
+    color: #e8e8f0;
+}
+
+/* Labels dentro do modal */
+.modal-vuln-corpo .form-group label,
+.modal-vuln-corpo .form-group > label {
+    color: #c8c8e0;
+    font-size: 0.88rem;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+/* Tabela */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    background-color: var(--dark-blue);
+    color: var(--text-main);
+}
+
+th,
+td {
+    border: 1px solid var(--purple-light);
+    padding: 12px;
+    text-align: left;
+}
+
+th {
+    background-color: var(--purple-main);
+    color: var(--text-main);
+}
+
+.risco-critico {
+    background-color: var(--purple-main) !important;
+}
+
+.tabela-vazia {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 30px;
+    font-style: italic;
+}
+
+/* Botões */
+
+button {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.btn-add {
+    background-color: var(--purple-main);
+    color: white;
+    width: 100%;
+    margin-top: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+
+.btn-add:hover {
+    background-color: #9040ff;
+}
+
+.modal-vuln-footer .btn-add {
+    width: auto;
+    margin-top: 0;
+    padding: 10px 22px;
+    border-radius: 8px;
+}
+
+.btn-gerar {
+    background-color: var(--purple-dark);
+    color: white;
+    padding: 10px 20px;
+    font-size: 16px;
+}
+
+.btn-todos {
+    background-color: var(--purple-dark);
+    color: white;
+    padding: 10px 20px;
+    font-size: 16px;
+    margin-left: 8px;
+}
+
+.btn-validar {
+    background-color: var(--purple-light);
+    color: white;
+    margin-right: 5px;
+}
+
+.btn-circuit {
+    background-color: var(--orange);
+    color: white;
+}
+
+.btn-ia-aceitar {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-ia-editar {
+    background-color: #ffc107;
+    color: #333;
+    margin-left: 5px;
+}
+
+/* Toast */
+
+#toast {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: var(--text-main);
+    color: white;
+    padding: 14px 22px;
+    border-radius: 6px;
+    font-size: 14px;
+    z-index: 999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+#toast .icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* Relatório */
+
+.modo-relatorio {
+    border: 2px solid #17a2b8;
+    border-radius: 6px;
+}
+
+/* Assistente de Contexto (Wizard IA) */
+
+#ia-wizard {
+    display: none;
+    grid-column: 1 / -1;
+    background: var(--dark-blue);
+    padding: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--purple-light);
+    margin-bottom: 10px;
+}
+
+#ia-wizard label {
+    color: var(--purple-light);
+    font-weight: bold;
+    margin-bottom: 8px;
+    display: block;
+}
+
+#wizard-progresso {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+#wizard-pergunta {
+    color: var(--text-main);
+    font-size: 15px;
+    margin-bottom: 10px;
+}
+
+.wizard-botoes {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.btn-wizard-sim,
+.btn-wizard-nao {
+    flex: 1;
+    padding: 8px;
+    font-weight: bold;
+}
+
+.btn-wizard-sim {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-wizard-nao {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-wizard-pular {
+    background: transparent;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+#wizard-resumo {
+    display: none;
+}
+
+#wizard-resumo-texto {
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+
+/* Prioridade (motor de priorização da IA) — badge de severidade.
+   Mesmas cores que já existiam no arquivo (vermelho de alerta, laranja do
+   Circuit Breaker, cinza neutro), só que aplicadas como badge em vez de
+   pintar a célula inteira. */
+
+.badge-prioridade {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.badge-critica {
+    background: rgba(220, 53, 69, 0.15);
+    color: #dc3545;
+    border-color: rgba(220, 53, 69, 0.4);
+}
+
+.badge-alta {
+    background: rgba(252, 118, 20, 0.15);
+    color: var(--orange);
+    border-color: rgba(252, 118, 20, 0.4);
+}
+
+.badge-moderada {
+    background: rgba(150, 159, 173, 0.15);
+    color: var(--light-gray);
+    border-color: rgba(150, 159, 173, 0.4);
+}
+
+.btn-analisar {
+    background-color: var(--purple-light);
+    color: white;
+    margin-top: 5px;
+}
+
+/* Modal de Análise de Risco */
+
+#modal-analise-fundo {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+#modal-analise-conteudo {
+    position: relative;
+    background: var(--black-gradient);
+    border: 1px solid var(--purple-light);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 520px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: var(--text-main);
+    box-shadow: var(--shadow);
+}
+
+#modal-analise-conteudo h4 {
+    margin-top: 16px;
+    margin-bottom: 6px;
+    color: var(--purple-light);
+}
+
+#modal-analise-conteudo ul,
+#modal-analise-conteudo ol {
+    padding-left: 20px;
+    color: var(--text-secondary);
+}
+
+#modal-analise-conteudo li {
+    margin-bottom: 4px;
+}
+
+#btn-fechar-analise {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 16px;
+    padding: 4px 8px;
+}
+
+#badge-relatorio {
+    display: none;
+    background: #17a2b8;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-left: 10px;
+}
+
+/* =========================
+   HEADER
+========================= */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    position: relative;
+}
+
+/* =========================
+   LOGO
+========================= */
+
+.logo img {
+  width: 150px;
+  position: relative;
+  top: -30px;
+  right: 40px;
+  height: auto;
+  display: block;
+  z-index: 9999;
+}
+
+/* =========================
+   SEARCH
+========================= */
+
+.search {
+    display: flex;
+    position: relative;
+    top: -25px;
+    right: 30px;
+    align-items: center;
+    gap: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px 16px;
+    border-radius: 14px;
+    z-index: 9999;
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  width: 220px;
+  font-size: 15px;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   NAVBAR
+========================= */
+
+.navbar {
+    display: flex;
+    position: relative;
+    top: -145px;
+    right:10px;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    padding: 16px 24px;
+    backdrop-filter: blur(10px);
+    border-radius: 40px;
+    margin: 0 24px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.navbar a {
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 1.3rem;
+  font-weight: 400;
+  transition: 0.3s ease;
+  position: relative;
+}
+
+.navbar a::after {
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--purple-main);
+  content: "";
+  transition: width 0.3s ease;
+}
+
+/* Adicionar responsividade */
+@media (max-width: 768px) {
+    .navbar {
+        flex-wrap: wrap;
+        gap: 16px;
+        border-radius: 12px;
+    }
+    .search {
+        width: 100%;
+        max-width: 280px;
+    }
+}
+
+.navbar a::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  bottom: -6px;
+
+  width: 0%;
+  height: 2px;
+
+  background: var(--purple-main);
+
+  transition: 0.3s ease;
+}
+
+.navbar a:hover::after {
+  width: 100%;
+}
+
+/* =========================
+   BOTÃO "ACRESCENTAR VULNERABILIDADE"
+========================= */
+
+.btn-nova-vuln {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, var(--purple-main), #5a1abf);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(123, 46, 255, 0.4);
+  letter-spacing: 0.01em;
+}
+
+.btn-nova-vuln:hover {
+  background: linear-gradient(135deg, #9040ff, #4a0faa);
+  box-shadow: 0 6px 20px rgba(123, 46, 255, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-nova-vuln:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(123, 46, 255, 0.3);
+}
+
+/* =========================
+   MODAL OVERLAY
+========================= */
+
+.modal-fundo {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  align-items: center;
+  justify-content: center;
+  animation: fadeInOverlay 0.2s ease;
+}
+
+.modal-fundo.aberto {
+  display: flex;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* =========================
+   MODAL CAIXA
+========================= */
+
+.modal-vuln-caixa {
+  background: #1a1a2e;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  width: 92%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  animation: slideInModal 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+  overflow: hidden;
+}
+
+@keyframes slideInModal {
+  from { opacity: 0; transform: translateY(-24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Header fixo */
+.modal-vuln-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  flex-shrink: 0;
+}
+
+.modal-vuln-header-titulo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.modal-fechar {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.modal-fechar:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* Corpo com scroll */
+.modal-vuln-corpo {
+  overflow-y: auto;
+  padding: 24px 28px 0;
+  flex: 1;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-vuln-corpo::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+}
+
+/* Separadores de seção dentro do modal */
+.modal-secao-titulo {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--purple-main);
+  padding: 10px 0 4px;
+  border-bottom: 1px solid rgba(123, 46, 255, 0.2);
+  margin-top: 6px;
+}
+
+/* Rodapé fixo */
+.modal-vuln-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 28px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  flex-shrink: 0;
+  margin-top: 20px;
+}
+
+.btn-modal-cancelar {
+  padding: 10px 22px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-modal-cancelar:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.25);
+}
+
+/* Campo KEV estilizado */
+.kev-group {
+  grid-column: 1 / -1;
+}
+
+.kev-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px 16px;
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  border-radius: 8px;
+  background: rgba(220, 53, 69, 0.05);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.kev-label:hover {
+  background: rgba(220, 53, 69, 0.1);
+  border-color: rgba(220, 53, 69, 0.5);
+}
+
+.kev-checkbox {
+  width: 18px !important;
+  height: 18px !important;
+  accent-color: #dc3545;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.kev-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  border-radius: 4px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel de Governança de Risco</title>
+
+    <link rel="stylesheet" href="painel.css" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+
+     <!-- HEADER -->
+  <header class="header">
+
+    <!-- LOGO -->
+    <div class="logo">
+      <img src="/SecureScopeProject/images/logotipo.png" alt="Logo SecureScope">
+    </div>
+
+
+    <!-- SEARCH -->
+    <div class="search">
+
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Pesquisar...">
+
+      <a href="#" class="search-btn">
+        <img
+          src="/SecureScopeProject/images/lupa.png"
+          alt="Pesquisar"
+          width="20"
+          height="20">
+      </a>
+
+    </div>
+
+  </header>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+
+    <a href="/SecureScopeProject/home/Home.html">Home</a>
+    <a href="/SecureScopeProject/securescope/index.html">Services</a>
+    <a href="#">Solutions</a>
+    <a href="#">About Us</a>
+    <a href="/SecureScopeProject/rate/Rate.html" class="rate">Rate us</a>
+
+    <!-- M3 — Botão de autenticação JWT + menu dropdown (Sair / Configurações) -->
+    <div id="auth-wrapper" style="position: relative; display: inline-block;">
+        <button id="btn-auth" onclick="abrirModalAuth()" style="
+            background: rgba(123, 46, 255, 0.2);
+            border: 1px solid rgba(123, 46, 255, 0.6);
+            color: #c4a1ff;
+            padding: 7px 18px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        ">Entrar</button>
+
+        <div id="menu-auth" style="
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 160px;
+            background: #1a1a2e;
+            border: 1px solid rgba(123, 46, 255, 0.4);
+            border-radius: 10px;
+            padding: 6px;
+            z-index: 50;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+        ">
+            <button onclick="abrirConfiguracoes()" style="
+                display: flex; align-items: center; gap: 8px; width: 100%;
+                background: none; border: none; color: var(--text-secondary, #a1a1b5);
+                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
+                cursor: pointer; text-align: left;
+            ">Configurações</button>
+            <button onclick="fazerLogout()" style="
+                display: flex; align-items: center; gap: 8px; width: 100%;
+                background: none; border: none; color: #ff6b6b;
+                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
+                cursor: pointer; text-align: left;
+            ">Sair</button>
+        </div>
+    </div>
+
+  </nav>
+
+<div id="toast"></div>
+
+<div class="container">
+    <div class="header-actions">
+        <div style="display:flex; align-items:center;">
+            <h1 style="margin:0;">Painel de Governança de Risco</h1>
+            <span id="badge-relatorio" class="icon-inline">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                Modo Relatório
+            </span>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn-nova-vuln" id="btn-abrir-modal-vuln" onclick="abrirModalVuln()">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Acrescentar nova vulnerabilidade
+            </button>
+
+            <button class="btn-gerar" onclick="gerarRelatorio()">
+                Gerar Relatório PDF
+            </button>
+
+            <button class="btn-todos" onclick="voltarPadrao()">
+                Ver Todos
+            </button>
+        </div>
+    </div>
+
+    <div class="painel-ia" id="painel-ia-container">
+        <h3 class="icon-inline">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18.7 8 12 14.7 9 11.7 4.7 16"/></svg>
+            Insights da IA
+        </h3>
+
+        <div id="ia-loading">
+            Carregando aprendizado do histórico...
+        </div>
+
+        <div class="ia-stats" id="ia-stats-content" style="display: none;">
+            <div class="ia-stat-box">
+                Risco Médio Geral
+                <strong id="ia-risco-medio">--</strong>
+            </div>
+
+            <div class="ia-stat-box">
+                Melhor / Pior Risco
+                <strong>
+                    <span id="ia-melhor-risco" style="color: green;">--</span>
+                    /
+                    <span id="ia-pior-risco" style="color: red;">--</span>
+                </strong>
+            </div>
+
+            <div class="ia-stat-box" style="flex: 2;">
+                Médias Base (Validadas:
+                <span id="ia-total">0</span>)
+                <strong style="font-size: 14px;">
+                    Imp:
+                    <span id="ia-media-imp">--</span>
+                    |
+                    Freq:
+                    <span id="ia-media-freq">--</span>
+                    |
+                    Grav:
+                    <span id="ia-media-grav">--</span>
+                </strong>
+            </div>
+
+            <div class="ia-stat-box" style="flex: 2;" id="ia-origens-box">
+                Achados por Origem
+                <strong id="ia-origens-lista" style="font-size: 13px; font-weight: normal;">--</strong>
+            </div>
+        </div>
+
+        <div id="ia-monitoramento" style="display: none;">
+            <strong class="icon-inline">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Monitoramento Contínuo (IA proativa)
+            </strong>
+            <ul id="ia-alertas-lista"></ul>
+        </div>
+
+        <!-- M2 — Widget de SLAs (NIST SP 800-53 SI-2(2) / ISO 27001 A.8.8) -->
+        <div id="sla-status-box" class="sla-widget" style="display: none;">
+            <strong class="icon-inline">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                SLAs em Risco / Violados
+            </strong>
+            <span id="sla-criticos" class="sla-criticos-badge">--</span>
+            <small id="sla-lista" class="sla-lista-texto"></small>
+        </div>
+
+        <!-- M4/M6 — KPIs de Governança -->
+        <div id="governance-kpis-box" class="sla-widget" style="display: none; background: rgba(123, 46, 255, 0.1); border-color: rgba(123, 46, 255, 0.5);">
+            <strong class="icon-inline" style="color: #9d5cff;">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                KPIs de Governança
+            </strong>
+            <div style="display: flex; gap: 15px; margin-top: 8px;">
+                <div style="flex: 1;">
+                    <span style="font-size: 11px; color: var(--text-secondary);">Maturidade SAMM</span><br>
+                    <strong id="kpi-samm-nivel" style="font-size: 15px; color: var(--text-main);">--</strong>
+                    <div id="kpi-samm-desc" style="font-size: 10px; color: var(--text-secondary); line-height: 1.2; margin-top: 2px;">--</div>
+                </div>
+                <div style="flex: 1;">
+                    <span style="font-size: 11px; color: var(--text-secondary);">SLA Breach Rate</span><br>
+                    <strong id="kpi-sla-breach" style="font-size: 15px; color: var(--text-main);">--</strong>
+                </div>
+                <div style="flex: 1;">
+                    <span style="font-size: 11px; color: var(--text-secondary);">Scan Coverage</span><br>
+                    <strong id="kpi-scan-coverage" style="font-size: 15px; color: var(--text-main);">--</strong>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL: Nova Vulnerabilidade -->
+    <div id="modal-vuln-fundo" class="modal-fundo" onclick="fecharModalVulnFundo(event)">
+        <div class="modal-vuln-caixa" id="modal-vuln-caixa">
+
+            <!-- Header do modal -->
+            <div class="modal-vuln-header">
+                <div class="modal-vuln-header-titulo">
+                    <svg class="icon" viewBox="0 0 24 24" style="width:20px;height:20px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Nova Vulnerabilidade</span>
+                </div>
+                <button class="modal-fechar" onclick="fecharModalVuln()" aria-label="Fechar">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Corpo com scroll -->
+            <div class="modal-vuln-corpo">
+                <form id="formVuln">
+                    <div class="form-grid">
+
+                        <div class="form-group full-width">
+                            <label>Nome da Ameaça</label>
+                            <input type="text" id="nome" placeholder="Ex: Bypass de autenticação na API" required />
+                        </div>
+
+                        <div id="ia-sugestao">
+                            <div style="color: #004085;">
+                                <strong id="ia-categoria-texto">Categoria detectada...</strong>
+                            </div>
+                            <div>
+                                <button type="button" class="btn-ia-aceitar icon-inline" id="btn-aceitar-ia">
+                                    <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Aceitar Valores
+                                </button>
+                                <button type="button" class="btn-ia-editar icon-inline" id="btn-editar-ia">
+                                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                                    Ajustar Manualmente
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="modal-secao-titulo">Métricas de Risco</div>
+
+                        <div class="form-group">
+                            <label>Impacto (0 a 100)</label>
+                            <input type="number" id="impacto" min="0" max="100" step="0.1" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Frequência (0 a 100)</label>
+                            <input type="number" id="frequencia" min="0" max="100" step="0.1" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Gravidade (0 a 100)</label>
+                            <input type="number" id="gravidade" min="0" max="100" step="0.1" required />
+                        </div>
+
+                        <div class="modal-secao-titulo">Identificação do Ativo</div>
+
+                        <div class="form-group">
+                            <label>Ativo/Sistema Afetado</label>
+                            <input type="text" id="ativo" placeholder="Ex: API de Pagamentos" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Origem do Achado</label>
+                            <select id="origem">
+                                <option value="Manual/Pentest">Manual/Pentest</option>
+                            </select>
+                        </div>
+
+                        <div class="modal-secao-titulo">Dados CVE / CVSS / EPSS <span style="font-weight:400;font-size:12px;opacity:0.6;">(opcional)</span></div>
+
+                        <div class="form-group">
+                            <label>CVE ID</label>
+                            <input type="text" id="cve_id" placeholder="Ex: CVE-2024-12345" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>CVSS Score <span style="font-weight:normal;color:var(--text-secondary);">(0.0 – 10.0)</span></label>
+                            <input type="number" id="cvss_score" min="0" max="10" step="0.1" value="0" placeholder="Ex: 9.8" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>EPSS Score <span style="font-weight:normal;color:var(--text-secondary);">(0.000 – 1.000)</span></label>
+                            <input type="number" id="epss_score" min="0" max="1" step="0.001" value="0" placeholder="Ex: 0.850" />
+                        </div>
+
+                        <div class="form-group kev-group">
+                            <label class="kev-label">
+                                <input type="checkbox" id="no_kev" class="kev-checkbox" />
+                                <span>Consta na lista <strong>CISA KEV</strong></span>
+                                <span class="kev-badge">Exploração Ativa</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group full-width" id="ia-wizard">
+                            <label class="icon-inline">
+                                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16.01"/><line x1="16" y1="16" x2="16" y2="16.01"/></svg>
+                                Assistente de Contexto da IA
+                            </label>
+                            <div id="wizard-pergunta-area">
+                                <p id="wizard-progresso"></p>
+                                <p id="wizard-pergunta"></p>
+                                <div class="wizard-botoes">
+                                    <button type="button" id="wizard-sim" class="btn-wizard-sim">Sim</button>
+                                    <button type="button" id="wizard-nao" class="btn-wizard-nao">Não</button>
+                                </div>
+                                <button type="button" id="wizard-pular" class="btn-wizard-pular">Pular perguntas</button>
+                            </div>
+                            <div id="wizard-resumo">
+                                <p id="wizard-resumo-texto" class="icon-inline"></p>
+                                <button type="button" id="wizard-refazer" class="btn-wizard-pular icon-inline">
+                                    <svg class="icon" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    Refazer perguntas
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Rodapé do modal com ações -->
+                    <div class="modal-vuln-footer">
+                        <button type="button" class="btn-modal-cancelar" onclick="fecharModalVuln()">Cancelar</button>
+                        <button type="submit" class="btn-add" id="btnAdicionar">
+                            <svg class="icon" viewBox="0 0 24 24" style="width:15px;height:15px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Registrar Vulnerabilidade
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <h2>Vulnerabilidades Registradas</h2>
+
+    <table id="tabelaPrincipal">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Ativo</th>
+                <th>Impacto</th>
+                <th>Frequência</th>
+                <th>Gravidade</th>
+                <th>Risk Index™</th>
+                <th>Prioridade</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+
+        <tbody id="tabelaCorpo"></tbody>
+    </table>
+</div>
+
+<div id="modal-analise-fundo">
+    <div id="modal-analise-conteudo">
+        <button id="btn-fechar-analise" aria-label="Fechar">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+
+        <h3 id="analise-titulo">Análise de Risco</h3>
+        <p id="analise-categoria"></p>
+        <p id="analise-ativo-origem"></p>
+
+        <h4>Por que essa prioridade?</h4>
+        <ul id="analise-explicacao"></ul>
+
+        <h4>Score DREAD (framework complementar)</h4>
+        <ul id="analise-dread"></ul>
+
+        <h4>Guia de Remediação</h4>
+        <ol id="analise-guia"></ol>
+    </div>
+</div>
+
+<script src="script.js"></script>
+
+<!-- M3 — Modal de Autenticação JWT -->
+<div id="modal-auth-fundo" style="
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 9999;
+    justify-content: center; align-items: center;
+">
+  <div style="
+      background: #12121e; border: 1px solid rgba(123,46,255,0.4);
+      border-radius: 12px; padding: 36px 40px; width: 380px;
+      box-shadow: 0 8px 40px rgba(123,46,255,0.25);
+      position: relative;
+  ">
+    <button onclick="fecharModalAuth()" style="
+        position: absolute; top: 14px; right: 16px;
+        background: none; border: none; color: #888;
+        font-size: 20px; cursor: pointer;
+    ">&times;</button>
+
+    <!-- Abas Login / Cadastro -->
+    <div style="display:flex; gap:0; margin-bottom:24px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <button id="aba-login" onclick="mostrarAbaLogin()" style="
+          flex:1; background:none; border:none; color:#c4a1ff;
+          font-size:1rem; padding:8px 0; cursor:pointer;
+          border-bottom: 2px solid #7b2eff;
+      ">Entrar</button>
+      <button id="aba-registro" onclick="mostrarAbaRegistro()" style="
+          flex:1; background:none; border:none; color:#666;
+          font-size:1rem; padding:8px 0; cursor:pointer;
+          border-bottom: 2px solid transparent;
+      ">Criar Conta</button>
+    </div>
+
+    <!-- Formulário LOGIN -->
+    <div id="form-login">
+      <label style="color:#aaa; font-size:13px;">E-mail</label><br>
+      <input id="auth-email" type="email" placeholder="analista@empresa.com"
+        style="width:100%; margin:6px 0 14px; padding:10px 14px;
+               background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
+               border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
+      ><br>
+      <label style="color:#aaa; font-size:13px;">Senha</label><br>
+      <input id="auth-senha" type="password" placeholder="••••••••"
+        style="width:100%; margin:6px 0 20px; padding:10px 14px;
+               background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
+               border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter') fazerLogin()"
+      ><br>
+      <button onclick="fazerLogin()" style="
+          width:100%; padding:12px; background:#7b2eff;
+          border:none; border-radius:8px; color:#fff;
+          font-size:1rem; font-weight:600; cursor:pointer;
+      ">Entrar</button>
+      <p id="auth-erro-login" style="color:#ff6b6b; font-size:12px; margin-top:10px;"></p>
+    </div>
+
+    <!-- Formulário REGISTRO -->
+    <div id="form-registro" style="display:none;">
+      <label style="color:#aaa; font-size:13px;">Nome completo</label><br>
+      <input id="reg-nome" type="text" placeholder="João Silva"
+        style="width:100%; margin:6px 0 14px; padding:10px 14px;
+               background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
+               border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
+      ><br>
+      <label style="color:#aaa; font-size:13px;">E-mail</label><br>
+      <input id="reg-email" type="email" placeholder="analista@empresa.com"
+        style="width:100%; margin:6px 0 14px; padding:10px 14px;
+               background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
+               border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
+      ><br>
+      <label style="color:#aaa; font-size:13px;">Senha</label><br>
+      <input id="reg-senha" type="password" placeholder="Mínimo 6 caracteres"
+        style="width:100%; margin:6px 0 20px; padding:10px 14px;
+               background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
+               border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter') fazerRegistro()"
+      ><br>
+      <button onclick="fazerRegistro()" style="
+          width:100%; padding:12px; background:#7b2eff;
+          border:none; border-radius:8px; color:#fff;
+          font-size:1rem; font-weight:600; cursor:pointer;
+      ">Criar Conta</button>
+      <p id="auth-erro-registro" style="color:#ff6b6b; font-size:12px; margin-top:10px;"></p>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
