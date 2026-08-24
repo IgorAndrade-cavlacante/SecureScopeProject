@@ -1,0 +1,2 @@
+# Dependência escolhida para produzir poucos achados na demonstração.
+Flask==2.2.5

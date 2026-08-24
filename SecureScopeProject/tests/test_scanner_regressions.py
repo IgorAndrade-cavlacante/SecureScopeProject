@@ -120,5 +120,64 @@ class SASTDetailsRegressionTest(unittest.TestCase):
         self.assertGreaterEqual(len(achado["_remediacao"]), 3)
 
 
+class DASTRegressionTest(unittest.TestCase):
+    @patch("scanner.requests.get")
+    def test_passive_scan_uses_real_headers_and_redacts_cookie_value(self, get):
+        response = Mock()
+        response.url = "http://127.0.0.1:5055/"
+        response.headers = {
+            "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+            "X-Frame-Options": "DENY",
+            "X-Content-Type-Options": "nosniff",
+            "Server": "Werkzeug/3.1.0 Python/3.12",
+        }
+        response.raw.headers.getlist.return_value = [
+            "session_demo=segredo-que-nao-pode-vazar; Path=/; SameSite=Lax"
+        ]
+        response.raise_for_status.return_value = None
+        get.return_value = response
+
+        alertas = scanner._executar_analise_passiva_http(response.url)
+
+        self.assertEqual(len(alertas), 2)
+        self.assertEqual(
+            {alerta["alert"] for alerta in alertas},
+            {
+                "Cookie sensível sem HttpOnly: session_demo",
+                "Server Leaks Version Information via 'Server' HTTP Response Header",
+            },
+        )
+        evidencias = " ".join(alerta["evidence"] for alerta in alertas)
+        self.assertNotIn("segredo-que-nao-pode-vazar", evidencias)
+        response.close.assert_called_once()
+
+    @patch("scanner.aplicar_triagem_llm")
+    @patch("scanner._executar_analise_passiva_http")
+    @patch("scanner._zap_disponivel", return_value=False)
+    @patch("scanner._validar_alvo_dast", return_value=(True, ""))
+    def test_zap_unavailable_never_generates_mock_findings(
+        self, _validar, _zap, passivo, triagem
+    ):
+        passivo.return_value = [{
+            "alert": "Cabeçalho real ausente",
+            "risk": "Low",
+            "confidence": "High",
+            "cweid": "693",
+            "description": "Observado na resposta real.",
+            "solution": "Adicionar o cabeçalho.",
+            "evidence": "X-Test: ausente",
+            "url": "https://alvo.example/",
+        }]
+        triagem.side_effect = lambda achados: (achados, 0, False)
+
+        resultado = scanner.executar_dast("https://alvo.example/")
+
+        self.assertIsNone(resultado["erro"])
+        self.assertEqual(resultado["modo_scan"], "passivo_http")
+        self.assertFalse(resultado["mock_usado"])
+        self.assertEqual(resultado["total_achados"], 1)
+        self.assertEqual(resultado["achados"][0]["_modo_scan"], "passivo_http")
+
+
 if __name__ == "__main__":
     unittest.main()

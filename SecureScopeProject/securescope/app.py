@@ -266,6 +266,7 @@ def serializar_detalhes_scanner(achado, tipo):
     elif tipo == "dast":
         detalhes.update({
             "url": achado.get("ativo", ""),
+            "modo_scan": achado.get("_modo_scan", ""),
             "cwe": f"CWE-{achado.get('_cwe_id', '')}" if achado.get("_cwe_id") else "",
             "evidencia": achado.get("_evidencia", ""),
             "solucao": achado.get("_solucao", ""),
@@ -1496,9 +1497,9 @@ def scanner_analisar_codigo():
 @limiter.limit(os.environ.get("RATELIMIT_DAST", "3 per hour"), key_func=rate_limit_usuario)
 def scanner_analisar_url():
     """Fase 4 — DAST: recebe uma URL de sistema alvo via JSON, executa
-    Spider + Active Scan através da API HTTP do OWASP ZAP (com fallback
-    simulado caso o daemon do ZAP não esteja rodando localmente) e insere
-    os achados na tabela 'vulnerabilidades' existente.
+    Spider + Active Scan através da API HTTP do OWASP ZAP. Quando o daemon
+    não está disponível, faz uma análise passiva real dos cabeçalhos HTTP e
+    identifica esse modo explicitamente antes de inserir os achados.
 
     Corpo JSON esperado:
         { "url": "https://site-homologacao.com" }
@@ -1651,7 +1652,10 @@ def scanner_analisar_url():
 
             registrar_historico(
                 vuln_id,
-                f"Detectada via DAST/OWASP ZAP (scan #{scan_id}) — Severidade {achado.get('_gravidade_texto', '')}",
+                (
+                    f"Detectada via DAST/{'OWASP ZAP' if achado.get('_modo_scan') == 'zap_ativo' else 'Análise Passiva HTTP'} "
+                    f"(scan #{scan_id}) — Severidade {achado.get('_gravidade_texto', '')}"
+                ),
                 "Scanner Automatizado"
             )
             ids_inseridos.append(vuln_id)
@@ -1702,7 +1706,8 @@ def scanner_analisar_url():
         "total_vulnerabilidades_encontradas": len(ids_inseridos),
         "achados_descartados":                resultado_dast.get("achados_descartados", 0),
         "triagem_aplicada":                   resultado_dast.get("triagem_aplicada", False),
-        "zap_mock_usado":                     resultado_dast.get("mock_usado", False),
+        "modo_scan":                          resultado_dast.get("modo_scan", ""),
+        "zap_mock_usado":                     False,  # compatibilidade com clientes antigos
         "vulnerabilidades":                   achados_resumo,
         "data_inicio":                        data_inicio,
         "data_fim":                           data_fim,

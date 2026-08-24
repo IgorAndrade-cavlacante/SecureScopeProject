@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Fase 1 — SCA (Software Composition Analysis)
 # Fase 2 — SAST (Static Application Security Testing) com Bandit
-# Fase 4 — DAST (Dynamic Application Security Testing) com OWASP ZAP
+# Fase 4 — DAST com OWASP ZAP e análise passiva HTTP real como fallback
 #
 # Fase 1 — SCA:
 #   1. parsear_requirements()   — extrai lista de (pacote, versão) de um
@@ -980,9 +980,9 @@ def executar_sast_zip(conteudo_zip: bytes) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 #   10. _zap_disponivel()        — checa se o daemon do ZAP está no ar.
 #   11. _executar_zap_real()     — Spider + Active Scan reais via API do ZAP.
-#   12. _gerar_alertas_mock()    — fallback simulado (mesmo formato do ZAP)
-#                                  usado quando o daemon não está instalado.
-#   13. processar_achados_zap()  — normaliza os alertas (reais ou mock).
+#   12. _executar_analise_passiva_http() — verifica a resposta real do alvo
+#                                  quando o daemon ZAP não está instalado.
+#   13. processar_achados_zap()  — normaliza alertas reais, ativos ou passivos.
 #   14. executar_dast(url)       — orquestra o pipeline completo.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1119,66 +1119,139 @@ def _executar_zap_real(url: str) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
-# 12. FALLBACK MOCK (ZAP não instalado localmente)
+# 12. FALLBACK PASSIVO REAL (ZAP não instalado localmente)
 # ─────────────────────────────────────────────
 
-def _gerar_alertas_mock(url: str) -> list[dict]:
-    """Gera alertas simulados no MESMO formato de resposta da API do ZAP
-    (campos 'alert', 'risk', 'confidence', 'cweid', etc.), permitindo que
-    processar_achados_zap() trate achados reais e simulados de forma
-    idêntica. Usado apenas quando o daemon do ZAP não está rodando
-    localmente na porta 8080 — mantém a interface e o pipeline (triagem
-    Multi-LLM, gravação no banco) totalmente testáveis sem a ferramenta."""
-    return [
-        {
-            "alert": "Content Security Policy (CSP) Header Not Set",
-            "risk": "Medium",
-            "confidence": "High",
-            "cweid": "693",
-            "description": "O cabeçalho Content-Security-Policy não foi encontrado na resposta HTTP, deixando a aplicação mais vulnerável a ataques de XSS e injeção de dados.",
-            "solution": "Configure uma política CSP restritiva no servidor web ou na aplicação Flask (ex: via flask-talisman).",
-            "evidence": "",
-            "url": url,
-        },
-        {
-            "alert": "X-Frame-Options Header Not Set",
-            "risk": "Medium",
-            "confidence": "Medium",
-            "cweid": "1021",
-            "description": "A resposta não define o cabeçalho X-Frame-Options, permitindo que a página seja incorporada em um iframe malicioso (clickjacking).",
-            "solution": "Defina X-Frame-Options: DENY ou SAMEORIGIN em todas as respostas.",
-            "evidence": "",
-            "url": url,
-        },
-        {
-            "alert": "Cookie No HttpOnly Flag",
-            "risk": "Low",
-            "confidence": "Medium",
-            "cweid": "1004",
-            "description": "Um cookie foi definido sem a flag HttpOnly, permitindo que seja lido via JavaScript no navegador (aumenta o risco de roubo de sessão via XSS).",
-            "solution": "Defina a flag HttpOnly em todos os cookies de sessão/autenticação.",
-            "evidence": "Set-Cookie: session=...",
-            "url": url,
-        },
-        {
-            "alert": "Server Leaks Version Information via 'Server' HTTP Response Header",
-            "risk": "Informational",
-            "confidence": "High",
-            "cweid": "200",
-            "description": "O cabeçalho 'Server' da resposta HTTP expõe a versão exata do software rodando no servidor, facilitando o reconhecimento por um atacante.",
-            "solution": "Remova ou ofusque o cabeçalho 'Server' na configuração do servidor web/WSGI.",
-            "evidence": "Server: Werkzeug/3.0.1 Python/3.11",
-            "url": url,
-        },
-    ]
+_COOKIE_SENSIVEL_RE = re.compile(r"(?:session|sess|auth|token|jwt)", re.IGNORECASE)
+_VERSAO_SERVIDOR_RE = re.compile(r"(?:/|\s)\d+(?:\.\d+)+")
+
+
+def _cabecalhos_set_cookie(response) -> list[str]:
+    """Obtém Set-Cookie separados sem expor os respectivos valores."""
+    raw_headers = getattr(getattr(response, "raw", None), "headers", None)
+    if raw_headers is not None and hasattr(raw_headers, "getlist"):
+        return list(raw_headers.getlist("Set-Cookie"))
+    valor = response.headers.get("Set-Cookie", "")
+    return [valor] if valor else []
+
+
+def _executar_analise_passiva_http(url: str) -> list[dict]:
+    """Inspeciona uma resposta HTTP real sem enviar payloads de ataque.
+
+    Esse fallback não se apresenta como ZAP: ele verifica somente controles
+    observáveis nos cabeçalhos finais e inclui a evidência efetivamente
+    recebida. Assim, indisponibilidade do ZAP nunca gera achados inventados.
+    """
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": "SecureScope-DAST-Passive/1.0"},
+            timeout=ZAP_TIMEOUT_SEGUNDOS,
+            allow_redirects=True,
+            stream=True,
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Erro ao consultar o alvo para análise passiva: {e}") from e
+
+    try:
+        url_final = response.url or url
+        headers = response.headers
+        csp = headers.get("Content-Security-Policy", "")
+        alertas = []
+
+        if not csp:
+            alertas.append({
+                "alert": "Content Security Policy (CSP) Header Not Set",
+                "risk": "Medium",
+                "confidence": "High",
+                "cweid": "693",
+                "description": "A resposta HTTP real não apresentou o cabeçalho Content-Security-Policy.",
+                "solution": "Configure uma política CSP restritiva e compatível com os recursos da aplicação.",
+                "evidence": "Content-Security-Policy: ausente",
+                "url": url_final,
+            })
+
+        if not headers.get("X-Frame-Options") and "frame-ancestors" not in csp.lower():
+            alertas.append({
+                "alert": "Proteção contra Clickjacking não encontrada",
+                "risk": "Medium",
+                "confidence": "High",
+                "cweid": "1021",
+                "description": "A resposta real não apresentou X-Frame-Options nem a diretiva CSP frame-ancestors.",
+                "solution": "Defina X-Frame-Options ou CSP frame-ancestors em todas as respostas HTML.",
+                "evidence": "X-Frame-Options e CSP frame-ancestors: ausentes",
+                "url": url_final,
+            })
+
+        if headers.get("X-Content-Type-Options", "").lower() != "nosniff":
+            alertas.append({
+                "alert": "X-Content-Type-Options ausente ou inválido",
+                "risk": "Low",
+                "confidence": "High",
+                "cweid": "693",
+                "description": "A resposta real não desabilita MIME sniffing com X-Content-Type-Options: nosniff.",
+                "solution": "Adicione X-Content-Type-Options: nosniff.",
+                "evidence": f"X-Content-Type-Options: {headers.get('X-Content-Type-Options', 'ausente')}",
+                "url": url_final,
+            })
+
+        if urlparse(url_final).scheme.lower() == "https" and not headers.get("Strict-Transport-Security"):
+            alertas.append({
+                "alert": "Strict-Transport-Security Header Not Set",
+                "risk": "Low",
+                "confidence": "High",
+                "cweid": "319",
+                "description": "A resposta HTTPS real não apresentou o cabeçalho HSTS.",
+                "solution": "Adicione Strict-Transport-Security após confirmar que todo o domínio usa HTTPS.",
+                "evidence": "Strict-Transport-Security: ausente",
+                "url": url_final,
+            })
+
+        for cookie_header in _cabecalhos_set_cookie(response):
+            nome_cookie = cookie_header.split("=", 1)[0].strip()
+            if (
+                nome_cookie
+                and _COOKIE_SENSIVEL_RE.search(nome_cookie)
+                and not re.search(r"(?:^|;)\s*HttpOnly(?:;|$)", cookie_header, re.IGNORECASE)
+            ):
+                alertas.append({
+                    "alert": f"Cookie sensível sem HttpOnly: {nome_cookie}",
+                    "risk": "Low",
+                    "confidence": "High",
+                    "cweid": "1004",
+                    "description": "Um cookie com nome associado a sessão/autenticação foi observado sem HttpOnly.",
+                    "solution": "Defina HttpOnly para cookies de sessão ou autenticação.",
+                    "evidence": f"Set-Cookie: {nome_cookie}=<valor ocultado>; HttpOnly ausente",
+                    "url": url_final,
+                })
+
+        servidor = headers.get("Server", "")
+        if servidor and _VERSAO_SERVIDOR_RE.search(servidor):
+            alertas.append({
+                "alert": "Server Leaks Version Information via 'Server' HTTP Response Header",
+                "risk": "Informational",
+                "confidence": "High",
+                "cweid": "200",
+                "description": "O cabeçalho Server real expõe uma versão específica do software.",
+                "solution": "Remova a versão detalhada do cabeçalho Server quando a infraestrutura permitir.",
+                "evidence": f"Server: {servidor[:120]}",
+                "url": url_final,
+            })
+
+        return alertas
+    finally:
+        response.close()
 
 
 # ─────────────────────────────────────────────
 # 13. NORMALIZAÇÃO DOS ALERTAS ZAP
 # ─────────────────────────────────────────────
 
-def processar_achados_zap(alertas: list[dict], url_alvo: str) -> list[dict]:
-    """Converte alertas do ZAP (reais ou mock) em achados normalizados,
+def processar_achados_zap(
+    alertas: list[dict], url_alvo: str, modo_scan: str = "zap_ativo"
+) -> list[dict]:
+    """Converte alertas ativos/passivos reais em achados normalizados,
     no mesmo contrato usado por processar_achados_bandit() e
     processar_achados_osv() — compatível com a tabela 'vulnerabilidades'."""
     achados = []
@@ -1235,6 +1308,7 @@ def processar_achados_zap(alertas: list[dict], url_alvo: str) -> list[dict]:
             "_cwe_id":          str(cwe_id),
             "_evidencia":       evidencia,
             "_confianca":       conf_str,
+            "_modo_scan":       modo_scan,
             "_osv_id":          "",  # Compatibilidade com histórico da Fase 1
         }
         achados.append(achado)
@@ -1318,18 +1392,19 @@ def _validar_alvo_dast(url: str) -> tuple[bool, str]:
 
 def executar_dast(url: str) -> dict:
     """Ponto de entrada DAST: recebe a URL de um sistema alvo, executa
-    Spider + Active Scan via OWASP ZAP (ou usa alertas simulados caso o
-    daemon não esteja disponível localmente) e retorna achados normalizados
-    já filtrados pela triagem Multi-LLM (Fase 3).
+    Spider + Active Scan via OWASP ZAP. Se o daemon não estiver disponível,
+    executa uma análise passiva real dos cabeçalhos HTTP e retorna os achados
+    com o modo de execução explicitamente identificado, já filtrados pela
+    triagem Multi-LLM (Fase 3).
 
     Retorna dicionário:
         - 'achados': lista de vulnerabilidades normalizadas
-        - 'total_alertas': quantos alertas brutos o ZAP (ou o mock) retornou
+        - 'total_alertas': quantos alertas ativos ou passivos foram encontrados
         - 'total_achados': quantos sobreviveram à triagem Multi-LLM
         - 'achados_descartados': quantos foram descartados pela triagem
         - 'triagem_aplicada': se a triagem multi-LLM estava configurada
-        - 'mock_usado': True se o ZAP não estava disponível e o fallback
-          simulado foi usado
+        - 'modo_scan': 'zap_ativo' ou 'passivo_http'
+        - 'mock_usado': sempre False; mantido apenas por compatibilidade
         - 'url_alvo': a URL analisada
         - 'erro': None se OK, ou mensagem de erro
     """
@@ -1340,6 +1415,7 @@ def executar_dast(url: str) -> dict:
         "achados_descartados": 0,
         "triagem_aplicada": False,
         "mock_usado": False,
+        "modo_scan": "",
         "url_alvo": url,
         "erro": None,
     }
@@ -1363,14 +1439,15 @@ def executar_dast(url: str) -> dict:
     try:
         if _zap_disponivel():
             alertas = _executar_zap_real(url)
-            resultado["mock_usado"] = False
+            modo_scan = "zap_ativo"
         else:
-            alertas = _gerar_alertas_mock(url)
-            resultado["mock_usado"] = True
+            alertas = _executar_analise_passiva_http(url)
+            modo_scan = "passivo_http"
 
         resultado["total_alertas"] = len(alertas)
+        resultado["modo_scan"] = modo_scan
 
-        achados = processar_achados_zap(alertas, url)
+        achados = processar_achados_zap(alertas, url, modo_scan=modo_scan)
         achados_filtrados, descartados, triagem_aplicada = aplicar_triagem_llm(achados)
 
         resultado["achados"] = achados_filtrados

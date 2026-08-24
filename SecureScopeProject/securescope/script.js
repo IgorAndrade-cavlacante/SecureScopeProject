@@ -1541,7 +1541,7 @@ function renderizarResultadoScanner(dados, tipo) {
     const total  = dados.total_vulnerabilidades_encontradas ?? dados.vulnerabilidades?.length ?? 0;
     const descartados = dados.achados_descartados ?? 0;
     const triagem = dados.triagem_aplicada ?? false;
-    const mockZAP = dados.zap_mock_usado ?? false;
+    const modoDAST = dados.modo_scan ?? '';
     const vulns = dados.vulnerabilidades ?? [];
 
     // ─ Header
@@ -1572,10 +1572,12 @@ function renderizarResultadoScanner(dados, tipo) {
                 <div class="resultado-stat-label">Triagem IA</div>
                 <div class="resultado-stat-value ${triagCor}">${triagem ? 'Ativa' : 'Off'}</div>
             </div>
-            ${ mockZAP ? `
+            ${ tipo === 'dast' && modoDAST ? `
             <div class="resultado-stat-card">
-                <div class="resultado-stat-label">Modo ZAP</div>
-                <div class="resultado-stat-value warning">Mock</div>
+                <div class="resultado-stat-label">Modo DAST</div>
+                <div class="resultado-stat-value ${modoDAST === 'zap_ativo' ? 'success' : 'info'}">
+                    ${modoDAST === 'zap_ativo' ? 'ZAP ativo' : 'Passivo HTTP'}
+                </div>
             </div>` : ''}
         `;
     }
@@ -1629,6 +1631,16 @@ function renderizarResultadoScanner(dados, tipo) {
                         <span class="resultado-triagem-badge">
                             <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
                             Triagem IA: ${descartados} achado(s) descartado(s) automaticamente
+                        </span>
+                    </div>
+                `;
+            }
+
+            if (tipo === 'dast' && modoDAST === 'passivo_http') {
+                listaEl.innerHTML += `
+                    <div style="padding: 6px 0;">
+                        <span class="resultado-triagem-badge">
+                            Análise real e não invasiva dos cabeçalhos HTTP; nenhum ataque ativo foi executado.
                         </span>
                     </div>
                 `;
