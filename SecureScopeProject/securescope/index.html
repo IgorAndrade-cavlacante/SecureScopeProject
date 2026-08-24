@@ -463,6 +463,7 @@
 
     <h2>Vulnerabilidades Registradas</h2>
 
+    <div class="tabela-scroll" role="region" aria-label="Vulnerabilidades registradas" tabindex="0">
     <table id="tabelaPrincipal">
         <thead>
             <tr>
@@ -480,6 +481,7 @@
 
         <tbody id="tabelaCorpo"></tbody>
     </table>
+    </div>
 </div>
 
 <div id="modal-analise-fundo">
@@ -488,18 +490,57 @@
             <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
 
-        <h3 id="analise-titulo">Análise de Risco</h3>
-        <p id="analise-categoria"></p>
-        <p id="analise-ativo-origem"></p>
+        <div class="analise-cabecalho">
+            <span id="analise-tipo" class="analise-tipo-badge">ANÁLISE</span>
+            <h3 id="analise-titulo">Análise de Risco</h3>
+            <p id="analise-categoria"></p>
+            <p id="analise-ativo-origem"></p>
+        </div>
 
-        <h4>Por que essa prioridade?</h4>
-        <ul id="analise-explicacao"></ul>
+        <div id="analise-metricas" class="analise-metricas"></div>
 
-        <h4>Score DREAD (framework complementar)</h4>
-        <ul id="analise-dread"></ul>
+        <section id="analise-resumo-bloco" class="analise-secao" hidden>
+            <h4>O que foi identificado</h4>
+            <p id="analise-resumo"></p>
+            <p id="analise-risco" class="analise-risco-texto"></p>
+        </section>
 
-        <h4>Guia de Remediação</h4>
-        <ol id="analise-guia"></ol>
+        <section id="analise-localizacao-bloco" class="analise-secao" hidden>
+            <h4>Onde está no código ou componente</h4>
+            <div id="analise-localizacao" class="analise-localizacao"></div>
+            <pre id="analise-codigo" class="analise-codigo" hidden><code></code></pre>
+            <p id="analise-legado-aviso" class="analise-aviso" hidden></p>
+        </section>
+
+        <section class="analise-secao">
+            <h4>Por que essa prioridade?</h4>
+            <ul id="analise-explicacao"></ul>
+        </section>
+
+        <section class="analise-secao analise-remediacao">
+            <h4>Como corrigir agora</h4>
+            <ol id="analise-guia"></ol>
+        </section>
+
+        <details class="analise-detalhes">
+            <summary>Ver critérios e informações complementares</summary>
+
+            <h4>Contexto de exposição</h4>
+            <ul id="analise-fatores"></ul>
+
+            <h4>Score DREAD</h4>
+            <ul id="analise-dread"></ul>
+
+            <div id="analise-guia-complementar-bloco" hidden>
+                <h4>Boas práticas complementares</h4>
+                <ol id="analise-guia-complementar"></ol>
+            </div>
+
+            <div id="analise-referencias-bloco" hidden>
+                <h4>Referências</h4>
+                <ul id="analise-referencias"></ul>
+            </div>
+        </details>
     </div>
 </div>
 

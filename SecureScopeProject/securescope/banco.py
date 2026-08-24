@@ -103,6 +103,9 @@ COLUNAS_IA_CONTEXTO = {
     # Scanner — Fase 1: rastreabilidade de achados gerados automaticamente.
     "origem_scan":              "INTEGER DEFAULT NULL",   # FK para scans.id (NULL = entrada manual)
     "confianca_ia":             "REAL NOT NULL DEFAULT 0.0",  # Reservado para consenso multi-LLM (Fase 3)
+    # Metadados estruturados de SAST/SCA/DAST (trecho, linha, descrição,
+    # versão corrigida e referências) usados somente na análise detalhada.
+    "detalhes_scanner":         "TEXT NOT NULL DEFAULT '{}'",
 }
 
 def migrar_colunas_contexto_ia(conn):

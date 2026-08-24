@@ -159,10 +159,34 @@ PESOS_SLA = {
     "P4": 180,  # 180 dias ou aceite de risco
 }
 
-def calcular_prioridade_v2(cvss, epss, no_kev, fatores, criticidade_ativo=1.0):
+def classificar_sla(prioridade, no_kev=False):
+    """Converte uma Priority Score (0-100) em nível e prazo de SLA."""
+    if no_kev:
+        return "P0", PESOS_SLA["P0"]
+    if prioridade >= 90:
+        nivel = "P1"
+    elif prioridade >= 70:
+        nivel = "P2"
+    elif prioridade >= 40:
+        nivel = "P3"
+    else:
+        nivel = "P4"
+    return nivel, PESOS_SLA[nivel]
+
+
+def calcular_prioridade_v2(
+    cvss,
+    epss,
+    no_kev,
+    fatores,
+    criticidade_ativo=1.0,
+    risk_index_base=None,
+    epss_disponivel=None,
+):
     """
     M1 — Motor de priorização tripartido (estado da arte ASPM 2024-2026):
-      Rp = [(CVSS × 0.30) + (EPSS × 100 × 0.70)] × C_ativo × E_fator
+      - com EPSS: Risk Index 45% + CVSS normalizado 30% + EPSS 25%
+      - sem EPSS: Risk Index 60% + CVSS normalizado 40%
 
     Baseado na metodologia documentada em plataformas como CrowdStrike Falcon
     ASPM e Palo Alto Prisma Cloud, que combinam:
@@ -172,9 +196,14 @@ def calcular_prioridade_v2(cvss, epss, no_kev, fatores, criticidade_ativo=1.0):
 
     Retorna: (score, nivel_sla, prazo_dias, explicacao)
     """
-    cvss = float(cvss or 0.0)
-    epss = float(epss or 0.0)
+    cvss = max(0.0, min(float(cvss or 0.0), 10.0))
+    epss = max(0.0, min(float(epss or 0.0), 1.0))
     fatores = fatores or {}
+    risk_index = None if risk_index_base is None else max(
+        0.0, min(float(risk_index_base), 100.0)
+    )
+    if epss_disponivel is None:
+        epss_disponivel = epss > 0
 
     # KEV Override — se na lista CISA, prioridade máxima automática (P0)
     if no_kev:
@@ -185,33 +214,66 @@ def calcular_prioridade_v2(cvss, epss, no_kev, fatores, criticidade_ativo=1.0):
         ]
         return 100.0, "P0", PESOS_SLA["P0"], explicacao
 
-    # Score base ponderado (CVSS 30% + EPSS 70%)
-    score_base = (cvss * 0.30) + (epss * 100 * 0.70)
+    # CVSS usa escala 0-10; a Priority Score e o Risk Index usam 0-100.
+    # A implementação anterior aplicava 30% diretamente ao CVSS 8.0 e gerava
+    # somente 2,4 pontos. Normalizar antes da ponderação elimina essa distorção.
+    cvss_normalizado = cvss * 10
 
-    # Fator de exposição na internet (dobra o risco quando ativo está exposto)
-    e_fator = 2.0 if fatores.get("exposta_internet") else 1.0
-
-    # Score final limitado a 100
-    rp = round(min(score_base * criticidade_ativo * e_fator, 100.0), 1)
-
-    # Determinar nível SLA por score
-    if rp >= 90 or (cvss >= 9.0 and epss >= 0.50):
-        nivel = "P1"
-    elif rp >= 70 or (cvss >= 7.0 and epss >= 0.30):
-        nivel = "P2"
-    elif rp >= 40:
-        nivel = "P3"
+    if risk_index is None:
+        score_base = (
+            (cvss_normalizado * 0.30) + (epss * 100 * 0.70)
+            if epss_disponivel
+            else cvss_normalizado
+        )
+    elif epss_disponivel:
+        score_base = (
+            (risk_index * 0.45)
+            + (cvss_normalizado * 0.30)
+            + (epss * 100 * 0.25)
+        )
     else:
-        nivel = "P4"
+        # SAST/DAST não possuem EPSS real. Tratar "sem dado" como 0% derrubava
+        # artificialmente achados de alto impacto; nesses casos usamos o risco
+        # observado e a severidade técnica.
+        score_base = (risk_index * 0.60) + (cvss_normalizado * 0.40)
+
+    criticidade = max(0.5, min(float(criticidade_ativo or 1.0), 2.0))
+    bonus_contexto = sum(
+        peso for chave, (peso, _descricao) in PESOS_FATORES_CONTEXTO.items()
+        if fatores.get(chave)
+    )
+
+    rp = score_base * criticidade + bonus_contexto
+    # O Priority Score nunca deve ficar abaixo do risco já observado no achado.
+    if risk_index is not None:
+        rp = max(rp, risk_index)
+    rp = round(min(rp, 100.0), 1)
+
+    nivel, prazo = classificar_sla(rp)
+    if (cvss >= 9.0 and epss_disponivel and epss >= 0.50):
+        nivel, prazo = "P1", PESOS_SLA["P1"]
 
     explicacao = [
-        f"CVSS: {cvss:.1f} (peso 30% → {cvss * 0.30:.1f} pts)",
-        f"EPSS: {epss:.2%} (peso 70% → {epss * 100 * 0.70:.1f} pts)",
-        f"Score Base: {score_base:.1f} | Fator Exposição: {e_fator}x",
-        f"Priority Score Final: {rp} → Nível {nivel} (SLA: {PESOS_SLA[nivel]} dias)"
+        f"Risk Index™ observado: {risk_index:.1f}/100" if risk_index is not None
+        else "Risk Index™ não informado",
+        f"CVSS: {cvss:.1f}/10 (normalizado: {cvss_normalizado:.0f}/100)",
+        (
+            f"EPSS: {epss:.2%} (probabilidade estimada de exploração)"
+            if epss_disponivel
+            else "EPSS indisponível para este achado; não foi tratado como risco zero"
+        ),
+        f"Score técnico combinado: {score_base:.1f}/100",
     ]
 
-    return rp, nivel, PESOS_SLA[nivel], explicacao
+    for chave, (peso, descricao) in PESOS_FATORES_CONTEXTO.items():
+        if fatores.get(chave):
+            explicacao.append(f"+{peso} pontos — {descricao}")
+
+    explicacao.append(
+        f"Priority Score final: {rp}/100 → {nivel} (SLA: {prazo} dias)"
+    )
+
+    return rp, nivel, prazo, explicacao
 
 
 def calcular_prioridade(risk_index_base, fatores):

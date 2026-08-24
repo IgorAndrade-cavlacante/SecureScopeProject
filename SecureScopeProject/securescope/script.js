@@ -312,7 +312,10 @@ function mostrarToast(msg, tipo = 'info') {
     const toast = document.getElementById('toast');
     const config = TOAST_TIPOS[tipo] || TOAST_TIPOS.info;
 
-    toast.innerHTML = config.icone + '<span>' + msg + '</span>';
+    toast.innerHTML = config.icone;
+    const texto = document.createElement('span');
+    texto.textContent = String(msg ?? '');
+    toast.appendChild(texto);
     toast.style.background = config.cor;
     toast.style.display = 'flex';
 
@@ -364,39 +367,35 @@ function renderizarTabela(dados) {
             tr.classList.add('risco-critico');
         }
 
-        let classeBadge = 'badge-moderada';
-        if (prioridade >= 90) {
-            classeBadge = 'badge-critica';
-        } else if (prioridade >= 75) {
-            classeBadge = 'badge-alta';
-        }
+        const classificacao = classificarPrioridade(prioridade);
+        const id = Number.parseInt(vuln.id, 10);
 
         tr.innerHTML = `
-            <td>${vuln.nome}</td>
-            <td>${vuln.ativo || '—'}</td>
-            <td>${vuln.impacto}</td>
-            <td>${vuln.frequencia}</td>
-            <td>${vuln.gravidade}</td>
+            <td>${formatarNomeVulnerabilidade(vuln)}</td>
+            <td><strong>${escaparHtml(vuln.ativo || '—')}</strong></td>
+            <td>${escaparHtml(vuln.impacto)}</td>
+            <td>${escaparHtml(vuln.frequencia)}</td>
+            <td>${escaparHtml(vuln.gravidade)}</td>
             <td><strong>${score.toFixed(2)}</strong></td>
             <td>
-                <span class="badge-prioridade ${classeBadge}">
-                    <span class="badge-dot"></span>${prioridade.toFixed(1)}
+                <span class="badge-prioridade ${classificacao.classe}" title="Priority Score ${prioridade.toFixed(1)} de 100">
+                    <span class="badge-dot"></span>${classificacao.rotulo} · ${prioridade.toFixed(1)}
                 </span>
             </td>
-            <td>${vuln.status}</td>
+            <td>${escaparHtml(vuln.status)}</td>
             <td>
                 <button class="btn-validar"
-                    onclick="validarVuln(${vuln.id})">
+                    onclick="validarVuln(${id})">
                     Validar
                 </button>
 
                 <button class="btn-circuit"
-                    onclick="acionarCircuitBreaker(${vuln.id})">
+                    onclick="acionarCircuitBreaker(${id})">
                     Circuit Breaker
                 </button>
 
                 <button class="btn-analisar icon-inline"
-                    onclick="abrirAnaliseIA(${vuln.id})">
+                    onclick="abrirAnaliseIA(${id})">
                     ${ICONS.search}Analisar
                 </button>
             </td>
@@ -959,21 +958,111 @@ async function abrirAnaliseIA(id) {
 
         const analise = await res.json();
 
-        document.getElementById('analise-titulo').innerText =
-            `Análise de Risco — ${analise.nome}`;
+        const detalhes = analise.detalhes_scanner || {};
+        const tipo = detalhes.tipo || (String(analise.nome).match(/^\[(SAST|SCA|DAST)\]/)?.[1] ?? 'MANUAL');
+        const titulo = detalhes.titulo || String(analise.nome).replace(/^\[(SAST|SCA|DAST)\]\s*/, '');
+        const prioridade = Number(analise.prioridade || 0);
+        const classificacao = classificarPrioridade(prioridade);
 
-        document.getElementById('analise-categoria').innerText =
-            `Categoria: ${analise.categoria} | Priority Score: ${analise.prioridade}`;
+        document.getElementById('analise-tipo').textContent = tipo;
+        document.getElementById('analise-titulo').textContent = titulo;
+        document.getElementById('analise-categoria').textContent =
+            `${analise.categoria}${analise.cve_cwe ? ` · ${analise.cve_cwe}` : ''}`;
+        document.getElementById('analise-ativo-origem').textContent =
+            `Ativo: ${analise.ativo} · Origem: ${analise.origem}`;
 
-        document.getElementById('analise-ativo-origem').innerText =
-            `Ativo: ${analise.ativo} | Origem: ${analise.origem}`;
+        const metricas = analise.metricas || {};
+        const metricasEl = document.getElementById('analise-metricas');
+        metricasEl.innerHTML = '';
+        const cardsMetricas = [
+            ['Risk Index™', `${Number(analise.risk_index_base || 0).toFixed(1)}/100`],
+            ['Prioridade', `${classificacao.rotulo} · ${prioridade.toFixed(1)}${analise.nivel_prioridade ? ` · ${analise.nivel_prioridade}` : ''}`],
+            ['Impacto', `${Number(metricas.impacto || 0).toFixed(0)}/100`],
+            ['Frequência', `${Number(metricas.frequencia || 0).toFixed(0)}/100`],
+            ['Gravidade', `${Number(metricas.gravidade || 0).toFixed(0)}/100`],
+        ];
+        if (Number(metricas.cvss || 0) > 0) {
+            cardsMetricas.push(['CVSS', `${Number(metricas.cvss).toFixed(1)}/10`]);
+        }
+        cardsMetricas.forEach(([label, valor]) => {
+            const card = document.createElement('div');
+            card.className = 'analise-metrica';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'analise-metrica-label';
+            labelEl.textContent = label;
+            const valorEl = document.createElement('strong');
+            valorEl.className = 'analise-metrica-valor';
+            valorEl.textContent = valor;
+            card.append(labelEl, valorEl);
+            metricasEl.appendChild(card);
+        });
+
+        const resumoBloco = document.getElementById('analise-resumo-bloco');
+        const resumo = detalhes.descricao || '';
+        const risco = detalhes.risco || '';
+        resumoBloco.hidden = !resumo && !risco;
+        document.getElementById('analise-resumo').textContent = resumo;
+        document.getElementById('analise-risco').textContent = risco;
+
+        const localizacaoBloco = document.getElementById('analise-localizacao-bloco');
+        const localizacao = document.getElementById('analise-localizacao');
+        localizacao.innerHTML = '';
+        const adicionarChip = (texto, url = '') => {
+            if (!texto) return;
+            const chip = url && /^https:\/\//i.test(url)
+                ? document.createElement('a')
+                : document.createElement('span');
+            chip.textContent = texto;
+            if (chip.tagName === 'A') {
+                chip.href = url;
+                chip.target = '_blank';
+                chip.rel = 'noopener noreferrer';
+            }
+            localizacao.appendChild(chip);
+        };
+        adicionarChip(detalhes.arquivo ? `Arquivo: ${detalhes.arquivo}` : '');
+        adicionarChip(detalhes.linha ? `Linha: ${detalhes.linha}` : '');
+        adicionarChip(detalhes.test_id ? `Regra: ${detalhes.test_id}` : '');
+        adicionarChip(detalhes.cwe || '', detalhes.cwe_link || '');
+        adicionarChip(detalhes.confianca_ferramenta ? `Confiança: ${detalhes.confianca_ferramenta}` : '');
+        adicionarChip(detalhes.pacote ? `Pacote: ${detalhes.pacote}` : '');
+        adicionarChip(detalhes.versao_afetada ? `Versão afetada: ${detalhes.versao_afetada}` : '');
+        adicionarChip(detalhes.versao_corrigida ? `Corrigir em: ${detalhes.versao_corrigida}+` : '');
+        adicionarChip(detalhes.osv_id ? `OSV: ${detalhes.osv_id}` : '');
+        adicionarChip(detalhes.url ? `URL: ${detalhes.url}` : '');
+        adicionarChip(detalhes.evidencia ? `Evidência: ${detalhes.evidencia}` : '');
+
+        const codigo = document.getElementById('analise-codigo');
+        codigo.hidden = !detalhes.codigo;
+        codigo.querySelector('code').textContent = detalhes.codigo || '';
+
+        const ehScanner = ['SAST', 'SCA', 'DAST'].includes(tipo);
+        localizacaoBloco.hidden = localizacao.childElementCount === 0 && !ehScanner;
+        const avisoLegado = document.getElementById('analise-legado-aviso');
+        avisoLegado.hidden = !ehScanner || analise.detalhes_completos;
+        avisoLegado.textContent = 'Este achado foi criado antes do detalhamento técnico. Reexecute o scan para recuperar descrição completa e trecho de código.';
 
         const listaExplicacao = document.getElementById('analise-explicacao');
         listaExplicacao.innerHTML = '';
-        analise.explicacao.forEach(linha => {
+        (analise.explicacao || []).forEach(linha => {
             const li = document.createElement('li');
-            li.innerText = linha;
+            li.textContent = linha;
             listaExplicacao.appendChild(li);
+        });
+
+        const fatoresLabels = {
+            exposta_internet: 'Ativo exposto à internet',
+            exploit_publico: 'Exploit público disponível',
+            dados_sensiveis: 'Envolve dados sensíveis',
+            escalonamento_privilegio: 'Pode escalar privilégios',
+            ambiente_producao: 'Presente em produção',
+        };
+        const listaFatores = document.getElementById('analise-fatores');
+        listaFatores.innerHTML = '';
+        Object.entries(fatoresLabels).forEach(([chave, label]) => {
+            const li = document.createElement('li');
+            li.textContent = `${analise.fatores?.[chave] ? 'Sim' : 'Não'} — ${label}`;
+            listaFatores.appendChild(li);
         });
 
         const listaDread = document.getElementById('analise-dread');
@@ -990,18 +1079,49 @@ async function abrirAnaliseIA(id) {
             ];
             linhasDread.forEach(texto => {
                 const li = document.createElement('li');
-                li.innerText = texto;
+                li.textContent = texto;
                 listaDread.appendChild(li);
             });
         }
 
         const listaGuia = document.getElementById('analise-guia');
         listaGuia.innerHTML = '';
-        analise.guia_remediacao.forEach(passo => {
+        (analise.guia_remediacao || []).forEach(passo => {
             const li = document.createElement('li');
-            li.innerText = passo;
+            li.textContent = passo;
             listaGuia.appendChild(li);
         });
+
+        const complementarBloco = document.getElementById('analise-guia-complementar-bloco');
+        const complementarLista = document.getElementById('analise-guia-complementar');
+        complementarLista.innerHTML = '';
+        const complementar = analise.guia_complementar || [];
+        complementarBloco.hidden = complementar.length === 0;
+        complementar.forEach(passo => {
+            const li = document.createElement('li');
+            li.textContent = passo;
+            complementarLista.appendChild(li);
+        });
+
+        const referencias = [...(detalhes.referencias || [])];
+        if (detalhes.cwe_link) referencias.unshift(detalhes.cwe_link);
+        const referenciasValidas = [...new Set(referencias)].filter(url => /^https:\/\//i.test(url));
+        const referenciasBloco = document.getElementById('analise-referencias-bloco');
+        const referenciasLista = document.getElementById('analise-referencias');
+        referenciasLista.innerHTML = '';
+        referenciasBloco.hidden = referenciasValidas.length === 0;
+        referenciasValidas.forEach(url => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = url;
+            li.appendChild(a);
+            referenciasLista.appendChild(li);
+        });
+
+        document.querySelector('#modal-analise-conteudo details')?.removeAttribute('open');
 
         document.getElementById('modal-analise-fundo').style.display = 'flex';
 
@@ -1530,4 +1650,61 @@ function renderizarResultadoScanner(dados, tipo) {
             : `Scan ${tipoLabel} concluído — nenhuma vulnerabilidade!`,
         total > 0 ? 'alerta' : 'sucesso'
     );
+}
+
+function escaparHtml(valor) {
+    return String(valor ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function classificarPrioridade(valor) {
+    if (valor >= 90) return { rotulo: 'Crítica', classe: 'badge-critica' };
+    if (valor >= 70) return { rotulo: 'Alta', classe: 'badge-alta' };
+    if (valor >= 40) return { rotulo: 'Moderada', classe: 'badge-moderada' };
+    return { rotulo: 'Baixa', classe: 'badge-baixa' };
+}
+
+function formatarNomeVulnerabilidade(vuln) {
+    const nome = String(vuln.nome || 'Sem nome');
+    const ativo = String(vuln.ativo || '');
+    const sast = nome.match(/^\[SAST\]\s+(.+?):(\d+)\s+[—-]\s+(.+?)\s+\((B\d+)\)$/);
+    if (sast) {
+        return `
+            <div class="vuln-nome">
+                <span class="vuln-origem-tag">SAST</span>
+                <strong class="vuln-arquivo">${escaparHtml(sast[1])}</strong>
+                <span class="vuln-descricao"><span class="vuln-linha">Linha ${escaparHtml(sast[2])}</span> · ${escaparHtml(sast[3])} <span class="vuln-identificador">${escaparHtml(sast[4])}</span></span>
+            </div>`;
+    }
+
+    if (nome.startsWith('[SCA]')) {
+        const ativoRegex = ativo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const descricao = nome.replace(/^\[SCA\]\s*/, '').replace(new RegExp(`^${ativoRegex}\\s*`, 'i'), '');
+        return `
+            <div class="vuln-nome">
+                <span class="vuln-origem-tag">SCA</span>
+                <strong class="vuln-arquivo">${escaparHtml(ativo || 'Dependência')}</strong>
+                <span class="vuln-descricao">${escaparHtml(descricao || nome)}</span>
+            </div>`;
+    }
+
+    if (nome.startsWith('[DAST]')) {
+        return `
+            <div class="vuln-nome">
+                <span class="vuln-origem-tag">DAST</span>
+                <strong class="vuln-arquivo">${escaparHtml(ativo || 'URL analisada')}</strong>
+                <span class="vuln-descricao">${escaparHtml(nome.replace(/^\[DAST\]\s*/, ''))}</span>
+            </div>`;
+    }
+
+    return `
+        <div class="vuln-nome">
+            <span class="vuln-origem-tag">MANUAL</span>
+            <strong class="vuln-arquivo">${escaparHtml(nome)}</strong>
+            <span class="vuln-descricao">${escaparHtml(vuln.categoria || 'Vulnerabilidade registrada')}</span>
+        </div>`;
 }

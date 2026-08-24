@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import re
+import json
 import secrets
 import logging
 import hashlib
@@ -221,6 +222,57 @@ VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)")
 def get_db_connection():
     return db.get_db_connection()
 
+
+def serializar_detalhes_scanner(achado, tipo):
+    """Preserva metadados técnicos sem poluir a tabela principal."""
+    detalhes = {
+        "tipo": tipo.upper(),
+        "titulo": achado.get("_titulo", ""),
+        "descricao": achado.get("_descricao", ""),
+        "risco": achado.get("_risco", ""),
+        "remediacao": achado.get("_remediacao", []),
+        "referencias": achado.get("_referencias", []),
+    }
+
+    if tipo == "sast":
+        detalhes.update({
+            "arquivo": achado.get("ativo", ""),
+            "linha": achado.get("_linha", ""),
+            "codigo": achado.get("_codigo_trecho", ""),
+            "test_id": achado.get("_test_id", ""),
+            "test_name": achado.get("_test_name", ""),
+            "cwe": f"CWE-{achado.get('_cwe_id', '')}" if achado.get("_cwe_id") else "",
+            "cwe_link": achado.get("_cwe_link", ""),
+            "confianca_ferramenta": achado.get("_confianca", ""),
+        })
+    elif tipo == "sca":
+        detalhes.update({
+            "pacote": achado.get("ativo", ""),
+            "versao_afetada": achado.get("_versao_afetada", ""),
+            "versao_corrigida": achado.get("_versao_corrigida", ""),
+            "osv_id": achado.get("_osv_id", ""),
+        })
+    elif tipo == "dast":
+        detalhes.update({
+            "url": achado.get("ativo", ""),
+            "cwe": f"CWE-{achado.get('_cwe_id', '')}" if achado.get("_cwe_id") else "",
+            "evidencia": achado.get("_evidencia", ""),
+            "solucao": achado.get("_solucao", ""),
+            "confianca_ferramenta": achado.get("_confianca", ""),
+        })
+
+    return json.dumps(detalhes, ensure_ascii=False)
+
+
+def desserializar_detalhes_scanner(valor):
+    if not valor:
+        return {}
+    try:
+        detalhes = json.loads(valor)
+        return detalhes if isinstance(detalhes, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
 def usuario_id_atual(conn=None):
     """Resolve o id numerico do usuario autenticado a partir do JWT.
     Levanta erro se usado fora de uma
@@ -295,6 +347,61 @@ def preparar_banco_para_ia():
     if pendentes:
         conn.commit()
         print(f"[migração] {len(pendentes)} vulnerabilidade(s) antiga(s) classificada(s) pela IA.")
+
+    # Corrige registros criados pelo motor v2 antigo, que aplicava 30%
+    # diretamente ao CVSS na escala 0-10 (CVSS 8.0 virava prioridade 2.4).
+    subestimadas = conn.execute('''
+        SELECT id, score, prioridade, cvss_score, epss_score, no_kev,
+               exposta_internet, exploit_publico, dados_sensiveis,
+               escalonamento_privilegio, ambiente_producao, explicacao
+        FROM vulnerabilidades
+        WHERE prioridade < score
+    ''').fetchall()
+
+    for linha in subestimadas:
+        fatores = {
+            "exposta_internet": bool(linha.get("exposta_internet")),
+            "exploit_publico": bool(linha.get("exploit_publico")),
+            "dados_sensiveis": bool(linha.get("dados_sensiveis")),
+            "escalonamento_privilegio": bool(linha.get("escalonamento_privilegio")),
+            "ambiente_producao": bool(linha.get("ambiente_producao")),
+        }
+        cvss = float(linha.get("cvss_score") or 0)
+        epss = float(linha.get("epss_score") or 0)
+        no_kev = bool(linha.get("no_kev"))
+        if cvss > 0 or no_kev:
+            prioridade, nivel, prazo, explicacao = ia.calcular_prioridade_v2(
+                cvss,
+                epss,
+                no_kev,
+                fatores,
+                risk_index_base=linha["score"],
+                epss_disponivel=epss > 0,
+            )
+        else:
+            prioridade, explicacao = ia.calcular_prioridade(linha["score"], fatores)
+            nivel, prazo = ia.classificar_sla(prioridade)
+
+        prefixos_antigos = (
+            "CVSS:", "EPSS:", "Score Base:", "Priority Score Final:",
+            "Risk Index™ observado:", "Score técnico combinado:",
+        )
+        extras = [
+            item.strip() for item in (linha.get("explicacao") or "").split(" | ")
+            if item.strip()
+            and not item.strip().startswith(prefixos_antigos)
+            and not item.strip().startswith("+")
+        ]
+        explicacao_texto = " | ".join(explicacao + extras)
+        conn.execute('''
+            UPDATE vulnerabilidades
+            SET prioridade = ?, sla_prioridade = ?, sla_prazo_dias = ?, explicacao = ?
+            WHERE id = ?
+        ''', (prioridade, nivel, prazo, explicacao_texto, linha["id"]))
+
+    if subestimadas:
+        conn.commit()
+        print(f"[migração] Prioridade corrigida em {len(subestimadas)} registro(s) subestimado(s).")
 
     conn.close()
 
@@ -501,7 +608,12 @@ def adicionar_vulnerabilidade():
     # M1 — Motor de priorização: usa v2 (tripartido) quando CVSS > 0, legado caso contrário.
     if cvss_score > 0 or no_kev:
         prioridade, nivel_sla, sla_prazo_dias, explicacao_fatores = ia.calcular_prioridade_v2(
-            cvss_score, epss_score, no_kev, fatores
+            cvss_score,
+            epss_score,
+            no_kev,
+            fatores,
+            risk_index_base=score,
+            epss_disponivel=epss_score > 0,
         )
         sla_prioridade = nivel_sla
     else:
@@ -522,6 +634,9 @@ def adicionar_vulnerabilidade():
     if correlacao_ativo["alerta"]:
         prioridade = round(min(prioridade + 3, 100.0), 1)
         explicacao_fatores.append(f"+3 pontos — {correlacao_ativo['mensagem']}")
+
+    # Correlações podem elevar o score para outra faixa; mantenha o SLA coerente.
+    sla_prioridade, sla_prazo_dias = ia.classificar_sla(prioridade, no_kev)
 
     explicacao_texto = " | ".join(explicacao_fatores)
 
@@ -868,6 +983,25 @@ def analise_vulnerabilidade(id):
     vuln = dict(vuln)
     categoria = vuln.get("categoria") or "Geral/Desconhecida"
     explicacao_texto = vuln.get("explicacao") or ""
+    detalhes = desserializar_detalhes_scanner(vuln.get("detalhes_scanner"))
+
+    # Registros de scanner anteriores à migração não guardavam o trecho de
+    # código. Ainda recuperamos arquivo/linha/teste a partir do nome legado.
+    detalhes_completos = bool(detalhes)
+    if not detalhes and str(vuln.get("nome", "")).startswith("[SAST]"):
+        match = re.match(
+            r"^\[SAST\]\s+(.+?):(\d+)\s+[—-]\s+(.+?)\s+\((B\d+)\)$",
+            vuln["nome"],
+        )
+        if match:
+            detalhes = {
+                "tipo": "SAST",
+                "arquivo": match.group(1),
+                "linha": int(match.group(2)),
+                "test_name": match.group(3),
+                "test_id": match.group(4),
+                "cwe": vuln.get("cve_id") or "",
+            }
 
     fatores = {
         "exposta_internet": bool(vuln.get("exposta_internet")),
@@ -877,6 +1011,9 @@ def analise_vulnerabilidade(id):
         "ambiente_producao": bool(vuln.get("ambiente_producao")),
     }
 
+    guia_categoria = ia.gerar_guia_remediacao(categoria)
+    guia_especifico = detalhes.get("remediacao") or []
+
     return jsonify({
         "id": vuln["id"],
         "nome": vuln["nome"],
@@ -885,8 +1022,21 @@ def analise_vulnerabilidade(id):
         "ativo": vuln.get("ativo") or "(não informado)",
         "risk_index_base": vuln["score"],
         "prioridade": vuln.get("prioridade", vuln["score"]),
+        "nivel_prioridade": vuln.get("sla_prioridade") or "",
+        "sla_prazo_dias": vuln.get("sla_prazo_dias"),
+        "metricas": {
+            "impacto": vuln.get("impacto"),
+            "frequencia": vuln.get("frequencia"),
+            "gravidade": vuln.get("gravidade"),
+            "cvss": vuln.get("cvss_score"),
+            "epss": vuln.get("epss_score"),
+        },
+        "cve_cwe": vuln.get("cve_id") or "",
         "explicacao": explicacao_texto.split(" | ") if explicacao_texto else [],
-        "guia_remediacao": ia.gerar_guia_remediacao(categoria),
+        "guia_remediacao": guia_especifico or guia_categoria,
+        "guia_complementar": guia_categoria if guia_especifico else [],
+        "detalhes_scanner": detalhes,
+        "detalhes_completos": detalhes_completos,
         "fatores": fatores,
         "dread": ia.calcular_dread(vuln["gravidade"], vuln["frequencia"], fatores)
     }), 200
@@ -948,18 +1098,23 @@ def scanner_analisar():
 
     # Se houve erro de rede ou parse, encerra o scan com status de erro
     if resultado_sca["erro"]:
+        erro_codigo = resultado_sca.get("erro_codigo")
         conn.execute(
             "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
             (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
         )
         conn.commit()
         conn.close()
+        status_http = 400 if erro_codigo in {
+            "REQUIREMENTS_INVALIDO", "LIMITE_PACOTES_EXCEDIDO"
+        } else 502
         return jsonify({
             "scan_id": scan_id,
             "status": "erro",
             "erro": resultado_sca["erro"],
+            "erro_codigo": erro_codigo,
             "total_pacotes_analisados": resultado_sca["total_pacotes"],
-        }), 502
+        }), status_http
 
     # — Estágio 3: (Multi-LLM já aplicado dentro de scanner.executar_sca) —
 
@@ -972,6 +1127,17 @@ def scanner_analisar():
             # Categoria detectada pela IA local (mesmo motor usado no input manual)
             categoria = ia.detectar_categoria(achado["nome"])
 
+            score = ia.calcular_risk_index(
+                achado["impacto"], achado["frequencia"], achado["gravidade"]
+            )
+            fatores_achado = {
+                "exposta_internet": achado["exposta_internet"],
+                "exploit_publico": achado["exploit_publico"],
+                "dados_sensiveis": achado["dados_sensiveis"],
+                "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                "ambiente_producao": achado["ambiente_producao"],
+            }
+
             # Prioridade via motor v2 (tripartido CVSS/EPSS/KEV) quando CVSS disponível
             cvss = achado["cvss_score"]
             if cvss > 0:
@@ -980,30 +1146,16 @@ def scanner_analisar():
                         cvss,
                         achado["epss_score"],
                         achado["no_kev"],
-                        {
-                            "exposta_internet": achado["exposta_internet"],
-                            "exploit_publico": achado["exploit_publico"],
-                            "dados_sensiveis": achado["dados_sensiveis"],
-                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
-                            "ambiente_producao": achado["ambiente_producao"],
-                        }
+                        fatores_achado,
+                        risk_index_base=score,
+                        epss_disponivel=achado.get("_epss_disponivel", False),
                     )
                 sla_prioridade = nivel_sla
             else:
-                score_base = round(
-                    (achado["impacto"] * 0.4) +
-                    (achado["frequencia"] * 0.3) +
-                    (achado["gravidade"] * 0.3), 2
-                )
-                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
-                sla_prioridade, sla_prazo_dias = "P3", 90
-
-            score = round(
-                (achado["impacto"] * 0.4) +
-                (achado["frequencia"] * 0.3) +
-                (achado["gravidade"] * 0.3), 2
-            )
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score, fatores_achado)
+                sla_prioridade, sla_prazo_dias = ia.classificar_sla(prioridade)
             explicacao_texto = " | ".join(explicacao_fatores)
+            detalhes_scanner = serializar_detalhes_scanner(achado, "sca")
             data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cursor = conn.cursor()
@@ -1015,8 +1167,8 @@ def scanner_analisar():
                      categoria, prioridade, explicacao, origem, ativo,
                      cvss_score, epss_score, cve_id, no_kev,
                      sla_prazo_dias, sla_prioridade,
-                     usuario_id, origem_scan, confianca_ia)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     usuario_id, origem_scan, confianca_ia, detalhes_scanner)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
             ''', (
                 achado["nome"],
@@ -1045,6 +1197,7 @@ def scanner_analisar():
                 uid,
                 scan_id,
                 achado.get("confianca_ia", 0.0),
+                detalhes_scanner,
             ))
             vuln_id = cursor.fetchone()["id"]
             conn.commit()
@@ -1058,9 +1211,11 @@ def scanner_analisar():
 
             achados_resumo.append({
                 "vuln_id": vuln_id,
+                "nome": achado.get("_titulo") or achado["nome"],
                 "pacote": achado["ativo"],
                 "cve_id": achado["cve_id"],
                 "cvss_score": achado["cvss_score"],
+                "prioridade": prioridade,
                 "sla_prioridade": sla_prioridade,
                 "versao_corrigida": achado.get("_versao_corrigida", ""),
                 "gravidade": achado.get("_gravidade_texto", ""),
@@ -1185,6 +1340,17 @@ def scanner_analisar_codigo():
             # Categoria detectada pela IA local
             categoria = ia.detectar_categoria(achado["nome"])
 
+            score = ia.calcular_risk_index(
+                achado["impacto"], achado["frequencia"], achado["gravidade"]
+            )
+            fatores_achado = {
+                "exposta_internet": achado["exposta_internet"],
+                "exploit_publico": achado["exploit_publico"],
+                "dados_sensiveis": achado["dados_sensiveis"],
+                "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                "ambiente_producao": achado["ambiente_producao"],
+            }
+
             # Prioridade via motor v2 (tripartido) quando CVSS disponível
             cvss = achado["cvss_score"]
             if cvss > 0:
@@ -1193,47 +1359,19 @@ def scanner_analisar_codigo():
                         cvss,
                         achado["epss_score"],
                         achado["no_kev"],
-                        {
-                            "exposta_internet":         achado["exposta_internet"],
-                            "exploit_publico":          achado["exploit_publico"],
-                            "dados_sensiveis":          achado["dados_sensiveis"],
-                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
-                            "ambiente_producao":        achado["ambiente_producao"],
-                        }
+                        fatores_achado,
+                        risk_index_base=score,
+                        epss_disponivel=False,
                     )
                 sla_prioridade = nivel_sla
             else:
-                score_base = round(
-                    (achado["impacto"] * 0.4) +
-                    (achado["frequencia"] * 0.3) +
-                    (achado["gravidade"] * 0.3), 2
-                )
-                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
-                sla_prioridade, sla_prazo_dias = "P3", 90
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score, fatores_achado)
+                sla_prioridade, sla_prazo_dias = ia.classificar_sla(prioridade)
 
-            score = round(
-                (achado["impacto"] * 0.4) +
-                (achado["frequencia"] * 0.3) +
-                (achado["gravidade"] * 0.3), 2
-            )
-
-            # Enriquece a explicação com metadados do Bandit (CWE, linha, confiança)
-            descricao_bandit = achado.get("_descricao", "")
-            cwe_id           = achado.get("_cwe_id", "")
-            confianca_bandit = achado.get("_confianca", "")
-            linha_codigo     = achado.get("_linha", "")
-
-            explicacao_extra = []
-            if descricao_bandit:
-                explicacao_extra.append(descricao_bandit)
-            if cwe_id:
-                explicacao_extra.append(f"CWE-{cwe_id}")
-            if confianca_bandit:
-                explicacao_extra.append(f"Confiança Bandit: {confianca_bandit}")
-            if linha_codigo:
-                explicacao_extra.append(f"Linha: {linha_codigo}")
-
-            explicacao_texto = " | ".join(list(explicacao_fatores) + explicacao_extra)
+            # Metadados técnicos ficam estruturados em detalhes_scanner; a
+            # explicação contém apenas os fatores de priorização.
+            explicacao_texto = " | ".join(explicacao_fatores)
+            detalhes_scanner = serializar_detalhes_scanner(achado, "sast")
             data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cursor = conn.cursor()
@@ -1245,8 +1383,8 @@ def scanner_analisar_codigo():
                      categoria, prioridade, explicacao, origem, ativo,
                      cvss_score, epss_score, cve_id, no_kev,
                      sla_prazo_dias, sla_prioridade,
-                     usuario_id, origem_scan, confianca_ia)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     usuario_id, origem_scan, confianca_ia, detalhes_scanner)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
             ''', (
                 achado["nome"],
@@ -1275,6 +1413,7 @@ def scanner_analisar_codigo():
                 uid,
                 scan_id,
                 achado.get("confianca_ia", 0.0),
+                detalhes_scanner,
             ))
             vuln_id = cursor.fetchone()["id"]
             conn.commit()
@@ -1288,12 +1427,14 @@ def scanner_analisar_codigo():
 
             achados_resumo.append({
                 "vuln_id":          vuln_id,
+                "nome":             achado.get("_titulo") or achado.get("_test_name", ""),
                 "arquivo":          achado["ativo"],
                 "linha":            achado.get("_linha", ""),
                 "test_id":          achado.get("_test_id", ""),
                 "test_name":        achado.get("_test_name", ""),
                 "cwe":              f"CWE-{achado.get('_cwe_id', '')}",
                 "cvss_score":       achado["cvss_score"],
+                "prioridade":       prioridade,
                 "sla_prioridade":   sla_prioridade,
                 "gravidade":        achado.get("_gravidade_texto", ""),
                 "confianca_bandit": achado.get("_confianca", ""),
@@ -1419,6 +1560,17 @@ def scanner_analisar_url():
             # Categoria detectada pela IA local
             categoria = ia.detectar_categoria(achado["nome"])
 
+            score = ia.calcular_risk_index(
+                achado["impacto"], achado["frequencia"], achado["gravidade"]
+            )
+            fatores_achado = {
+                "exposta_internet": achado["exposta_internet"],
+                "exploit_publico": achado["exploit_publico"],
+                "dados_sensiveis": achado["dados_sensiveis"],
+                "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                "ambiente_producao": achado["ambiente_producao"],
+            }
+
             # Prioridade via motor v2 (tripartido) quando CVSS disponível
             cvss = achado["cvss_score"]
             if cvss > 0:
@@ -1427,47 +1579,19 @@ def scanner_analisar_url():
                         cvss,
                         achado["epss_score"],
                         achado["no_kev"],
-                        {
-                            "exposta_internet":         achado["exposta_internet"],
-                            "exploit_publico":          achado["exploit_publico"],
-                            "dados_sensiveis":          achado["dados_sensiveis"],
-                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
-                            "ambiente_producao":        achado["ambiente_producao"],
-                        }
+                        fatores_achado,
+                        risk_index_base=score,
+                        epss_disponivel=False,
                     )
                 sla_prioridade = nivel_sla
             else:
-                score_base = round(
-                    (achado["impacto"] * 0.4) +
-                    (achado["frequencia"] * 0.3) +
-                    (achado["gravidade"] * 0.3), 2
-                )
-                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
-                sla_prioridade, sla_prazo_dias = "P3", 90
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score, fatores_achado)
+                sla_prioridade, sla_prazo_dias = ia.classificar_sla(prioridade)
 
-            score = round(
-                (achado["impacto"] * 0.4) +
-                (achado["frequencia"] * 0.3) +
-                (achado["gravidade"] * 0.3), 2
-            )
-
-            # Enriquece a explicação com metadados do ZAP (CWE, confiança, solução)
-            descricao_zap = achado.get("_descricao", "")
-            solucao_zap    = achado.get("_solucao", "")
-            cwe_id         = achado.get("_cwe_id", "")
-            confianca_zap  = achado.get("_confianca", "")
-
-            explicacao_extra = []
-            if descricao_zap:
-                explicacao_extra.append(descricao_zap)
-            if cwe_id:
-                explicacao_extra.append(f"CWE-{cwe_id}")
-            if confianca_zap:
-                explicacao_extra.append(f"Confiança ZAP: {confianca_zap}")
-            if solucao_zap:
-                explicacao_extra.append(f"Solução: {solucao_zap}")
-
-            explicacao_texto = " | ".join(list(explicacao_fatores) + explicacao_extra)
+            # A explicação fica curta; detalhes técnicos do ZAP são preservados
+            # separadamente para a tela de análise.
+            explicacao_texto = " | ".join(explicacao_fatores)
+            detalhes_scanner = serializar_detalhes_scanner(achado, "dast")
             data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cursor = conn.cursor()
@@ -1479,8 +1603,8 @@ def scanner_analisar_url():
                      categoria, prioridade, explicacao, origem, ativo,
                      cvss_score, epss_score, cve_id, no_kev,
                      sla_prazo_dias, sla_prioridade,
-                     usuario_id, origem_scan, confianca_ia)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     usuario_id, origem_scan, confianca_ia, detalhes_scanner)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
             ''', (
                 achado["nome"],
@@ -1509,6 +1633,7 @@ def scanner_analisar_url():
                 uid,
                 scan_id,
                 achado.get("confianca_ia", 0.0),
+                detalhes_scanner,
             ))
             vuln_id = cursor.fetchone()["id"]
             conn.commit()
@@ -1522,9 +1647,11 @@ def scanner_analisar_url():
 
             achados_resumo.append({
                 "vuln_id":         vuln_id,
+                "nome":            achado["nome"],
                 "url":             achado["ativo"],
                 "cwe":             f"CWE-{achado.get('_cwe_id', '')}" if achado.get('_cwe_id') else "",
                 "cvss_score":      achado["cvss_score"],
+                "prioridade":      prioridade,
                 "sla_prioridade":  sla_prioridade,
                 "gravidade":       achado.get("_gravidade_texto", ""),
                 "confianca_zap":   achado.get("_confianca", ""),

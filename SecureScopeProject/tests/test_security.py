@@ -1,9 +1,11 @@
 import os
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -28,6 +30,10 @@ class SecurityControlsTest(unittest.TestCase):
         securescope_app.limiter.reset()
         self.client = securescope_app.app.test_client()
         conn = securescope_app.get_db_connection()
+        conn.execute("DELETE FROM historico")
+        conn.execute("DELETE FROM sla_vulnerabilidades")
+        conn.execute("DELETE FROM vulnerabilidades")
+        conn.execute("DELETE FROM scans")
         conn.execute("DELETE FROM usuarios")
         conn.commit()
         conn.close()
@@ -113,6 +119,84 @@ class SecurityControlsTest(unittest.TestCase):
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
         response.close()
+
+    def test_sast_persists_detailed_analysis_and_realistic_priority(self):
+        self._register()
+        self._login()
+        csrf = self.client.get_cookie("csrf_access_token").value
+        codigo = b"import hashlib\n\ndef legado(valor):\n    return hashlib.md5(valor.encode()).hexdigest()\n"
+
+        scan = self.client.post(
+            "/scanner/analisar-codigo",
+            data={"arquivo": (io.BytesIO(codigo), "codigo.py")},
+            headers={"X-CSRF-TOKEN": csrf},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(scan.status_code, 201, scan.get_json())
+        vulnerabilidades = scan.get_json()["vulnerabilidades"]
+        b324 = next(item for item in vulnerabilidades if item["test_id"] == "B324")
+        self.assertGreaterEqual(b324["prioridade"], 70)
+
+        analise = self.client.get(f"/vulnerabilidades/{b324['vuln_id']}/analise")
+        self.assertEqual(analise.status_code, 200)
+        dados = analise.get_json()
+        self.assertTrue(dados["detalhes_completos"])
+        self.assertEqual(dados["detalhes_scanner"]["linha"], 4)
+        self.assertIn("hashlib.md5", dados["detalhes_scanner"]["codigo"])
+        self.assertGreaterEqual(len(dados["guia_remediacao"]), 3)
+
+    @patch("app.scanner.executar_sca")
+    def test_sca_persists_full_osv_metadata(self, executar_sca):
+        executar_sca.return_value = {
+            "erro": None,
+            "total_pacotes": 1,
+            "achados_descartados": 0,
+            "triagem_aplicada": False,
+            "pacotes_sem_vuln": [],
+            "achados": [{
+                "nome": "[SCA] demo 1.0.0 — Falha crítica",
+                "impacto": 100.0,
+                "frequencia": 50.0,
+                "gravidade": 100.0,
+                "cvss_score": 9.8,
+                "epss_score": 0.0,
+                "no_kev": False,
+                "exposta_internet": False,
+                "exploit_publico": False,
+                "dados_sensiveis": False,
+                "escalonamento_privilegio": False,
+                "ambiente_producao": False,
+                "origem": "Scanner Automatizado",
+                "ativo": "demo",
+                "cve_id": "CVE-2026-1234",
+                "_epss_disponivel": False,
+                "_titulo": "Falha crítica",
+                "_descricao": "Descrição OSV completa.",
+                "_versao_afetada": "1.0.0",
+                "_versao_corrigida": "2.0.0",
+                "_osv_id": "GHSA-demo",
+                "_referencias": ["https://example.test/advisory"],
+                "_gravidade_texto": "Crítica",
+            }],
+        }
+        self._register()
+        self._login()
+        csrf = self.client.get_cookie("csrf_access_token").value
+
+        scan = self.client.post(
+            "/scanner/analisar",
+            data={"arquivo": (io.BytesIO(b"demo==1.0.0\n"), "requirements.txt")},
+            headers={"X-CSRF-TOKEN": csrf},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(scan.status_code, 201, scan.get_json())
+        item = scan.get_json()["vulnerabilidades"][0]
+        analise = self.client.get(f"/vulnerabilidades/{item['vuln_id']}/analise").get_json()
+        detalhes = analise["detalhes_scanner"]
+        self.assertEqual(detalhes["versao_corrigida"], "2.0.0")
+        self.assertEqual(detalhes["descricao"], "Descrição OSV completa.")
 
     def test_production_rejects_missing_jwt_secret(self):
         env = os.environ.copy()

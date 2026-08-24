@@ -7,8 +7,8 @@
 # Fase 1 — SCA:
 #   1. parsear_requirements()   — extrai lista de (pacote, versão) de um
 #                                 requirements.txt enviado pelo usuário.
-#   2. consultar_osv_em_lote()  — consulta a API pública do OSV.dev em uma
-#                                 única requisição HTTP em lote (querybatch).
+#   2. consultar_osv_em_lote()  — consulta registros completos na API pública
+#                                 do OSV.dev com paralelismo limitado.
 #   3. processar_achados_osv()  — converte a resposta bruta do OSV em achados
 #                                 normalizados prontos para o banco.
 #   4. executar_sca()           — orquestra o pipeline completo.
@@ -32,6 +32,7 @@ import os
 import re
 import json
 import logging
+import math
 import shutil
 import socket
 # Uso restrito a `python -m bandit`, com argumentos separados e sem shell.
@@ -40,6 +41,7 @@ import sys
 import tempfile
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -66,16 +68,22 @@ def aplicar_triagem_llm(achados: list) -> tuple[list, int, bool]:
         
     return achados_filtrados, descartados, triagem_aplicada
 
-# URL da API pública do OSV.dev — sem autenticação necessária.
-OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
+# URLs da API pública do OSV.dev — sem autenticação necessária.
+# /query devolve o registro completo; /querybatch devolve apenas id/modified e
+# não contém CVSS, descrição, aliases nem versões corrigidas.
+OSV_QUERY_URL = "https://api.osv.dev/v1/query"
 
 # Timeout em segundos para a chamada ao OSV.dev.
-OSV_TIMEOUT_SEGUNDOS = 30
+OSV_TIMEOUT_SEGUNDOS = 15
 
 # A API externa pode ter falhas breves de rede, rate limit ou indisponibilidade.
 # Repetimos apenas erros transitórios; respostas 4xx permanentes não entram em
 # loop e continuam sendo reportadas como falha operacional ao chamador.
-OSV_MAX_TENTATIVAS = 3
+OSV_MAX_TENTATIVAS = 2
+
+# Evita que um único upload monopolize os workers do serviço.
+OSV_MAX_PACOTES = 100
+OSV_MAX_CONSULTAS_PARALELAS = 6
 
 # Ecossistema PyPI para consulta ao OSV.dev.
 # O OSV.dev aceita outros ecossistemas (npm, Go, Maven, etc.) — futuras
@@ -152,38 +160,21 @@ def parsear_requirements(conteudo_txt: str) -> list[dict]:
 # 2. CONSULTA AO OSV.dev EM LOTE
 # ─────────────────────────────────────────────
 
-def consultar_osv_em_lote(pacotes: list[dict]) -> dict:
-    """Faz uma única requisição POST para o endpoint /v1/querybatch do OSV.dev.
-
-    Cada item da lista 'pacotes' gera uma entrada em 'queries'. Quando a versão
-    é fornecida, a API retorna apenas as vulnerabilidades que afetam aquela
-    versão específica. Sem versão, retorna todos os CVEs conhecidos para o pacote.
-
-    Retorna o JSON bruto da resposta (dict com chave 'results').
-    Lança RuntimeError em caso de falha de rede ou resposta inválida.
-    """
-    if not pacotes:
-        return {"results": []}
-
-    queries = []
-    for item in pacotes:
-        query: dict = {
-            "package": {
-                "name": item["pacote"],
-                "ecosystem": OSV_ECOSISTEMA,
-            }
+def _consultar_pacote_osv(item: dict) -> dict:
+    """Consulta um pacote no /v1/query e devolve o registro OSV completo."""
+    payload: dict = {
+        "package": {
+            "name": item["pacote"],
+            "ecosystem": OSV_ECOSISTEMA,
         }
-        # Inclui versão apenas quando disponível — aumenta a precisão da consulta.
-        if item.get("versao"):
-            query["version"] = item["versao"]
-        queries.append(query)
-
-    payload = {"queries": queries}
+    }
+    if item.get("versao"):
+        payload["version"] = item["versao"]
 
     for tentativa in range(1, OSV_MAX_TENTATIVAS + 1):
         try:
             resposta = requests.post(
-                OSV_BATCH_URL,
+                OSV_QUERY_URL,
                 json=payload,
                 timeout=OSV_TIMEOUT_SEGUNDOS,
                 headers={"Content-Type": "application/json"},
@@ -202,7 +193,10 @@ def consultar_osv_em_lote(pacotes: list[dict]) -> dict:
                     continue
 
             resposta.raise_for_status()
-            return resposta.json()
+            dados = resposta.json()
+            if not isinstance(dados, dict):
+                raise ValueError("resposta JSON não é um objeto")
+            return {"vulns": dados.get("vulns", [])}
 
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if tentativa < OSV_MAX_TENTATIVAS:
@@ -215,36 +209,127 @@ def consultar_osv_em_lote(pacotes: list[dict]) -> dict:
                 time.sleep(2 ** (tentativa - 1))
                 continue
             raise RuntimeError(
-                f"OSV.dev indisponivel apos {OSV_MAX_TENTATIVAS} tentativas "
-                f"({type(e).__name__})."
+                "Não foi possível consultar o OSV.dev após "
+                f"{OSV_MAX_TENTATIVAS} tentativas ({type(e).__name__}). "
+                "Verifique a saída HTTPS do servidor/Render e tente novamente."
+            ) from e
+        except (ValueError, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                "O OSV.dev respondeu em um formato inesperado. Tente novamente mais tarde."
             ) from e
         except requests.exceptions.RequestException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             detalhe = f"HTTP {status}" if status else type(e).__name__
-            raise RuntimeError(f"Falha permanente ao consultar OSV.dev ({detalhe}).") from e
+            raise RuntimeError(
+                f"O OSV.dev recusou a consulta ({detalhe}). "
+                "O banco de dados local não foi alterado."
+            ) from e
 
-    raise RuntimeError("OSV.dev indisponivel apos repetidas tentativas.")
+    raise RuntimeError("OSV.dev indisponível após repetidas tentativas.")
+
+
+def consultar_osv_em_lote(pacotes: list[dict]) -> dict:
+    """Consulta os pacotes em paralelo e preserva o contrato ``results``.
+
+    O endpoint ``querybatch`` não fornece os campos técnicos usados pela tela de
+    análise. Por isso cada pacote usa ``/v1/query`` (registro completo), com um
+    pool pequeno para manter o tempo de resposta adequado no Render.
+    """
+    if not pacotes:
+        return {"results": []}
+    if len(pacotes) > OSV_MAX_PACOTES:
+        raise RuntimeError(
+            f"O arquivo contém {len(pacotes)} pacotes; o limite por scan é "
+            f"{OSV_MAX_PACOTES}. Divida o requirements.txt em partes menores."
+        )
+
+    workers = min(OSV_MAX_CONSULTAS_PARALELAS, len(pacotes))
+    executor = ThreadPoolExecutor(max_workers=workers)
+    futuros = {
+        executor.submit(_consultar_pacote_osv, pacote): indice
+        for indice, pacote in enumerate(pacotes)
+    }
+    resultados = [None] * len(pacotes)
+    try:
+        for futuro in as_completed(futuros):
+            resultados[futuros[futuro]] = futuro.result()
+    except Exception:
+        for futuro in futuros:
+            futuro.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+    return {"results": resultados}
 
 
 # ─────────────────────────────────────────────
 # 3. NORMALIZAÇÃO DOS ACHADOS
 # ─────────────────────────────────────────────
 
+def _arredondar_cvss(valor: float) -> float:
+    """CVSS arredonda sempre para cima em uma casa decimal."""
+    return math.ceil((valor * 10) - 1e-10) / 10.0
+
+
+def _calcular_cvss_v3(vetor: str) -> float:
+    """Calcula o Base Score de vetores CVSS 3.0/3.1 sem dependência externa."""
+    if not isinstance(vetor, str) or not vetor.startswith(("CVSS:3.0/", "CVSS:3.1/")):
+        return 0.0
+
+    metricas = {}
+    for parte in vetor.split("/")[1:]:
+        if ":" in parte:
+            chave, valor = parte.split(":", 1)
+            metricas[chave] = valor
+
+    try:
+        escopo = metricas["S"]
+        av = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}[metricas["AV"]]
+        ac = {"L": 0.77, "H": 0.44}[metricas["AC"]]
+        pr = (
+            {"N": 0.85, "L": 0.62, "H": 0.27}
+            if escopo == "U"
+            else {"N": 0.85, "L": 0.68, "H": 0.50}
+        )[metricas["PR"]]
+        ui = {"N": 0.85, "R": 0.62}[metricas["UI"]]
+        impacto_metrica = {"H": 0.56, "L": 0.22, "N": 0.0}
+        c = impacto_metrica[metricas["C"]]
+        i = impacto_metrica[metricas["I"]]
+        a = impacto_metrica[metricas["A"]]
+    except (KeyError, TypeError):
+        return 0.0
+
+    iss = 1 - ((1 - c) * (1 - i) * (1 - a))
+    if escopo == "U":
+        impacto = 6.42 * iss
+    else:
+        impacto = 7.52 * (iss - 0.029) - 3.25 * ((iss - 0.02) ** 15)
+    if impacto <= 0:
+        return 0.0
+
+    explorabilidade = 8.22 * av * ac * pr * ui
+    base = min(impacto + explorabilidade, 10)
+    if escopo == "C":
+        base = min(1.08 * (impacto + explorabilidade), 10)
+    return _arredondar_cvss(base)
+
+
 def _extrair_cvss(vuln_osv: dict) -> float:
-    """Extrai o score CVSS mais alto disponível em um objeto de vulnerabilidade
-    do OSV.dev. Tenta CVSS v3.1 > v3.0 > v2.0 nessa ordem de preferência."""
+    """Extrai o score CVSS mais alto de número ou vetor CVSS v3 do OSV."""
     severity = vuln_osv.get("severity", [])
     melhor_score = 0.0
 
-    preferencia = ["CVSS_V3", "CVSS_V2"]
+    preferencia = ["CVSS_V3", "CVSS_V4", "CVSS_V2"]
     for pref in preferencia:
         for sev in severity:
             if sev.get("type") == pref:
+                valor = sev.get("score", 0)
                 try:
-                    score = float(sev.get("score", 0))
+                    score = float(valor)
                     melhor_score = max(melhor_score, score)
                 except (ValueError, TypeError):
-                    pass
+                    melhor_score = max(melhor_score, _calcular_cvss_v3(valor))
 
     # Fallback: tenta database_specific do GitHub Advisory
     if melhor_score == 0.0:
@@ -281,6 +366,21 @@ def _extrair_versao_corrigida(vuln_osv: dict, nome_pacote: str) -> str:
     return ""
 
 
+def _extrair_severidade_textual(vuln_osv: dict) -> str:
+    """Obtém severidade textual quando o registro não publica vetor CVSS."""
+    candidatos = [vuln_osv.get("database_specific", {}).get("severity")]
+    for afetado in vuln_osv.get("affected", []):
+        candidatos.extend([
+            afetado.get("ecosystem_specific", {}).get("severity"),
+            afetado.get("database_specific", {}).get("severity"),
+        ])
+    for candidato in candidatos:
+        valor = str(candidato or "").upper()
+        if valor in {"CRITICAL", "HIGH", "MODERATE", "MEDIUM", "LOW"}:
+            return valor
+    return ""
+
+
 def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]:
     """Converte a resposta bruta do OSV.dev em uma lista de achados normalizados.
 
@@ -292,6 +392,8 @@ def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]
     """
     achados = []
     resultados = resposta_osv.get("results", [])
+
+    identidades_vistas: dict[str, set[str]] = {}
 
     for i, resultado in enumerate(resultados):
         if i >= len(pacotes):
@@ -306,6 +408,18 @@ def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]
             continue  # Pacote sem vulnerabilidades conhecidas — OK
 
         for vuln in vulns:
+            # Fontes como GHSA e PYSEC podem representar a mesma falha. Os
+            # aliases permitem consolidá-la em um único registro por pacote.
+            identidades = {
+                str(valor).upper()
+                for valor in [vuln.get("id"), *(vuln.get("aliases") or [])]
+                if valor
+            }
+            vistas_pacote = identidades_vistas.setdefault(nome_pacote.lower(), set())
+            if identidades & vistas_pacote:
+                continue
+            vistas_pacote.update(identidades)
+
             cvss = _extrair_cvss(vuln)
             cve_id = _extrair_cve_id(vuln)
             versao_corrigida = _extrair_versao_corrigida(vuln, nome_pacote)
@@ -314,7 +428,7 @@ def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]
             titulo_osv = vuln.get("summary", "") or vuln.get("id", nome_pacote)
             nome_vuln = f"[SCA] {nome_pacote} {versao_pacote} — {titulo_osv}"[:200]
 
-            # Severidade textual baseada no CVSS
+            # Severidade textual baseada no CVSS, com fallback do próprio OSV.
             if cvss >= 9.0:
                 gravidade_texto = "Crítica"
                 gravidade_val = 100.0
@@ -328,8 +442,14 @@ def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]
                 gravidade_texto = "Baixa"
                 gravidade_val = 20.0
             else:
-                gravidade_texto = "Desconhecida"
-                gravidade_val = 30.0  # Assume risco baixo quando CVSS não disponível
+                severidade_osv = _extrair_severidade_textual(vuln)
+                gravidade_texto, gravidade_val = {
+                    "CRITICAL": ("Crítica", 100.0),
+                    "HIGH": ("Alta", 80.0),
+                    "MODERATE": ("Média", 50.0),
+                    "MEDIUM": ("Média", 50.0),
+                    "LOW": ("Baixa", 20.0),
+                }.get(severidade_osv, ("Desconhecida", 30.0))
 
             # Monta o achado no formato esperado pelo pipeline de inserção do app.py
             achado = {
@@ -362,7 +482,13 @@ def processar_achados_osv(resposta_osv: dict, pacotes: list[dict]) -> list[dict]
                 "_versao_corrigida": versao_corrigida,
                 "_gravidade_texto": gravidade_texto,
                 "_osv_id": vuln.get("id", ""),
-                "_descricao": (vuln.get("details", "") or "")[:500],
+                "_descricao": (vuln.get("details", "") or "")[:2000],
+                "_titulo": titulo_osv,
+                "_referencias": [
+                    ref.get("url") for ref in vuln.get("references", [])
+                    if isinstance(ref, dict) and ref.get("url")
+                ][:5],
+                "_epss_disponivel": False,
             }
 
             achados.append(achado)
@@ -394,6 +520,7 @@ def executar_sca(conteudo_txt: str) -> dict:
         "total_achados": 0,
         "pacotes_sem_vuln": [],
         "erro": None,
+        "erro_codigo": None,
     }
 
     try:
@@ -406,6 +533,15 @@ def executar_sca(conteudo_txt: str) -> dict:
                 "Nenhum pacote encontrado no arquivo. "
                 "Verifique se o arquivo é um requirements.txt válido."
             )
+            resultado["erro_codigo"] = "REQUIREMENTS_INVALIDO"
+            return resultado
+
+        if len(pacotes) > OSV_MAX_PACOTES:
+            resultado["erro"] = (
+                f"O arquivo contém {len(pacotes)} pacotes; o limite por scan é "
+                f"{OSV_MAX_PACOTES}. Divida o requirements.txt em partes menores."
+            )
+            resultado["erro_codigo"] = "LIMITE_PACOTES_EXCEDIDO"
             return resultado
 
         # Etapa 2 — Consulta OSV.dev em lote
@@ -430,10 +566,12 @@ def executar_sca(conteudo_txt: str) -> dict:
 
     except RuntimeError as e:
         logger.error("Falha operacional no SCA: %s", e)
-        resultado["erro"] = "Servico de analise SCA indisponivel."
+        resultado["erro"] = str(e)
+        resultado["erro_codigo"] = "OSV_INDISPONIVEL"
     except Exception:
         logger.exception("Falha inesperada durante o SCA")
-        resultado["erro"] = "Erro interno inesperado durante o SCA."
+        resultado["erro"] = "Erro interno inesperado durante o SCA. Tente novamente."
+        resultado["erro_codigo"] = "SCA_ERRO_INTERNO"
 
     return resultado
 
@@ -460,6 +598,61 @@ _BANDIT_CONFIANCA = {
     "HIGH":   1.0,
     "MEDIUM": 0.75,
     "LOW":    0.5,
+}
+
+_BANDIT_ANALISES = {
+    "B301": {
+        "titulo": "Desserialização insegura com pickle",
+        "risco": "Dados não confiáveis podem executar código durante a desserialização.",
+        "remediacao": [
+            "Não aceite payload pickle vindo de usuário, fila ou fonte externa.",
+            "Prefira JSON com validação de esquema para transportar dados.",
+            "Se pickle for inevitável, valide origem e integridade criptográfica antes de carregar.",
+        ],
+    },
+    "B307": {
+        "titulo": "Execução dinâmica com eval",
+        "risco": "Uma expressão controlada por usuário pode executar código Python arbitrário.",
+        "remediacao": [
+            "Substitua eval por ast.literal_eval quando apenas literais forem necessários.",
+            "Para expressões de negócio, implemente um parser com operações permitidas.",
+            "Valide o formato de entrada e rejeite nomes, chamadas e atributos inesperados.",
+        ],
+    },
+    "B324": {
+        "titulo": "Hash criptográfico fraco (MD5)",
+        "risco": "MD5 possui colisões conhecidas e não deve proteger integridade, assinaturas ou credenciais.",
+        "remediacao": [
+            "Use SHA-256 ou SHA-3 para integridade de conteúdo sem segredo.",
+            "Para senhas, use Argon2id, scrypt ou bcrypt com salt; não use hash rápido puro.",
+            "Se MD5 for apenas identificador não relacionado à segurança, declare usedforsecurity=False e documente a exceção.",
+        ],
+    },
+    "B403": {
+        "titulo": "Importação de módulo de desserialização perigoso",
+        "risco": "O módulo pickle torna-se perigoso quando carrega bytes de origem não confiável.",
+        "remediacao": [
+            "Confirme se pickle é realmente necessário e remova a importação se não for usado.",
+            "Prefira um formato de dados sem execução implícita, como JSON validado.",
+        ],
+    },
+    "B404": {
+        "titulo": "Uso de subprocess requer revisão",
+        "risco": "Argumentos não validados ou uso de shell podem levar à execução de comandos.",
+        "remediacao": [
+            "Passe argumentos como lista e mantenha shell=False.",
+            "Use uma allowlist de comandos e valores aceitos.",
+        ],
+    },
+    "B602": {
+        "titulo": "Injeção de comando via shell=True",
+        "risco": "Entrada controlada pelo usuário pode ser interpretada pelo shell e executar comandos arbitrários.",
+        "remediacao": [
+            "Remova shell=True e passe o executável e os argumentos em uma lista.",
+            "Não concatene entrada de usuário em comandos; aplique uma allowlist estrita.",
+            "Execute o processo com a menor permissão possível e trate timeout e código de saída.",
+        ],
+    },
 }
 
 
@@ -597,6 +790,7 @@ def processar_achados_bandit(saida_bandit: dict, prefixo_remover: str = "") -> l
         cwe_id     = cwe_node.get("id", "") if isinstance(cwe_node, dict) else ""
         cwe_link   = cwe_node.get("link", "") if isinstance(cwe_node, dict) else ""
         codigo_trecho = (r.get("code", "") or "").strip()[:300]
+        analise_curada = _BANDIT_ANALISES.get(test_id, {})
 
         # CVE-ID preenchido como CWE quando disponível (sem CVE real no SAST)
         cve_id_campo = f"CWE-{cwe_id}" if cwe_id else test_id
@@ -642,6 +836,9 @@ def processar_achados_bandit(saida_bandit: dict, prefixo_remover: str = "") -> l
             "_linha":           linha,
             "_codigo_trecho":   codigo_trecho,
             "_confianca":       confianca_str,
+            "_titulo":          analise_curada.get("titulo", test_name.replace("_", " ").title()),
+            "_risco":           analise_curada.get("risco", descricao),
+            "_remediacao":      analise_curada.get("remediacao", []),
             "_osv_id":          "",  # Compatibilidade com histórico da Fase 1
         }
         achados.append(achado)
