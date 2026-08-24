@@ -72,6 +72,11 @@ OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 # Timeout em segundos para a chamada ao OSV.dev.
 OSV_TIMEOUT_SEGUNDOS = 30
 
+# A API externa pode ter falhas breves de rede, rate limit ou indisponibilidade.
+# Repetimos apenas erros transitórios; respostas 4xx permanentes não entram em
+# loop e continuam sendo reportadas como falha operacional ao chamador.
+OSV_MAX_TENTATIVAS = 3
+
 # Ecossistema PyPI para consulta ao OSV.dev.
 # O OSV.dev aceita outros ecossistemas (npm, Go, Maven, etc.) — futuras
 # extensões podem iterar sobre múltiplos ecossistemas.
@@ -175,22 +180,50 @@ def consultar_osv_em_lote(pacotes: list[dict]) -> dict:
 
     payload = {"queries": queries}
 
-    try:
-        resposta = requests.post(
-            OSV_BATCH_URL,
-            json=payload,
-            timeout=OSV_TIMEOUT_SEGUNDOS,
-            headers={"Content-Type": "application/json"},
-        )
-        resposta.raise_for_status()
-        return resposta.json()
-    except requests.exceptions.Timeout:
-        raise RuntimeError(
-            f"Timeout após {OSV_TIMEOUT_SEGUNDOS}s ao consultar o OSV.dev. "
-            "Verifique a conectividade e tente novamente."
-        )
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Erro ao consultar OSV.dev: {e}")
+    for tentativa in range(1, OSV_MAX_TENTATIVAS + 1):
+        try:
+            resposta = requests.post(
+                OSV_BATCH_URL,
+                json=payload,
+                timeout=OSV_TIMEOUT_SEGUNDOS,
+                headers={"Content-Type": "application/json"},
+            )
+
+            # Rate limit e falhas do servidor costumam ser temporários.
+            if resposta.status_code == 429 or resposta.status_code >= 500:
+                if tentativa < OSV_MAX_TENTATIVAS:
+                    logger.warning(
+                        "OSV.dev respondeu HTTP %s; nova tentativa %s/%s",
+                        resposta.status_code,
+                        tentativa + 1,
+                        OSV_MAX_TENTATIVAS,
+                    )
+                    time.sleep(2 ** (tentativa - 1))
+                    continue
+
+            resposta.raise_for_status()
+            return resposta.json()
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if tentativa < OSV_MAX_TENTATIVAS:
+                logger.warning(
+                    "Falha transitória ao consultar OSV.dev (%s); nova tentativa %s/%s",
+                    type(e).__name__,
+                    tentativa + 1,
+                    OSV_MAX_TENTATIVAS,
+                )
+                time.sleep(2 ** (tentativa - 1))
+                continue
+            raise RuntimeError(
+                f"OSV.dev indisponivel apos {OSV_MAX_TENTATIVAS} tentativas "
+                f"({type(e).__name__})."
+            ) from e
+        except requests.exceptions.RequestException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            detalhe = f"HTTP {status}" if status else type(e).__name__
+            raise RuntimeError(f"Falha permanente ao consultar OSV.dev ({detalhe}).") from e
+
+    raise RuntimeError("OSV.dev indisponivel apos repetidas tentativas.")
 
 
 # ─────────────────────────────────────────────
@@ -396,7 +429,7 @@ def executar_sca(conteudo_txt: str) -> dict:
         ]
 
     except RuntimeError as e:
-        logger.error("Falha operacional no SCA (%s)", type(e).__name__)
+        logger.error("Falha operacional no SCA: %s", e)
         resultado["erro"] = "Servico de analise SCA indisponivel."
     except Exception:
         logger.exception("Falha inesperada durante o SCA")
