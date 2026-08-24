@@ -3,101 +3,58 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Painel de Governança de Risco</title>
+    <title>SecureScope — Painel de Governança de Risco</title>
+    <meta name="description" content="Painel de governança de risco com IA: gerencie vulnerabilidades, SLAs e execute scans SCA, SAST e DAST automatizados.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="painel.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <link rel="icon" href="/images/favicon-32x32.png">
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="/site-search.js" defer></script>
 </head>
 <body>
 
-     <!-- HEADER -->
-  <header class="header">
+  <!-- HEADER -->
+  <header class="header site-header">
+    <a class="logo" href="/home" aria-label="Página inicial do SecureScope">
+      <img src="/images/logotipo.png" alt="Logo SecureScope">
+    </a>
 
-    <!-- LOGO -->
-    <div class="logo">
-      <img src="/SecureScopeProject/images/logotipo.png" alt="Logo SecureScope">
-    </div>
+    <nav class="navbar" aria-label="Navegação principal">
+      <a href="/home">Home</a>
+      <a href="/painel" class="active" aria-current="page">Services</a>
+      <a href="#">Solutions</a>
+      <a href="/about">About Us</a>
+      <a href="/rate/Rate.html" class="rate">Rate us</a>
+    </nav>
 
-
-    <!-- SEARCH -->
-    <div class="search">
-
+    <div class="search" role="search">
       <input
         type="text"
         class="search-input"
+        aria-label="Pesquisar nesta página"
         placeholder="Pesquisar...">
-
-      <a href="#" class="search-btn">
+      <button type="button" class="search-btn" aria-label="Pesquisar nesta página">
         <img
-          src="/SecureScopeProject/images/lupa.png"
-          alt="Pesquisar"
+          src="/images/lupa.png"
+          alt=""
           width="20"
           height="20">
-      </a>
-
+      </button>
     </div>
-
   </header>
-
-  <!-- NAVBAR -->
-  <nav class="navbar">
-
-    <a href="/SecureScopeProject/home/Home.html">Home</a>
-    <a href="/SecureScopeProject/securescope/index.html">Services</a>
-    <a href="#">Solutions</a>
-    <a href="#">About Us</a>
-    <a href="/SecureScopeProject/rate/Rate.html" class="rate">Rate us</a>
-
-    <!-- M3 — Botão de autenticação JWT + menu dropdown (Sair / Configurações) -->
-    <div id="auth-wrapper" style="position: relative; display: inline-block;">
-        <button id="btn-auth" onclick="abrirModalAuth()" style="
-            background: rgba(123, 46, 255, 0.2);
-            border: 1px solid rgba(123, 46, 255, 0.6);
-            color: #c4a1ff;
-            padding: 7px 18px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        ">Entrar</button>
-
-        <div id="menu-auth" style="
-            display: none;
-            position: absolute;
-            top: calc(100% + 8px);
-            right: 0;
-            min-width: 160px;
-            background: #1a1a2e;
-            border: 1px solid rgba(123, 46, 255, 0.4);
-            border-radius: 10px;
-            padding: 6px;
-            z-index: 50;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-        ">
-            <button onclick="abrirConfiguracoes()" style="
-                display: flex; align-items: center; gap: 8px; width: 100%;
-                background: none; border: none; color: var(--text-secondary, #a1a1b5);
-                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
-                cursor: pointer; text-align: left;
-            ">Configurações</button>
-            <button onclick="fazerLogout()" style="
-                display: flex; align-items: center; gap: 8px; width: 100%;
-                background: none; border: none; color: #ff6b6b;
-                padding: 10px 12px; border-radius: 6px; font-size: 0.9rem;
-                cursor: pointer; text-align: left;
-            ">Sair</button>
-        </div>
-    </div>
-
-  </nav>
 
 <div id="toast"></div>
 
 <div class="container">
     <div class="header-actions">
-        <div style="display:flex; align-items:center;">
+        <div style="display:flex; align-items:center; gap: 12px;">
             <h1 style="margin:0;">Painel de Governança de Risco</h1>
             <span id="badge-relatorio" class="icon-inline">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
@@ -106,6 +63,21 @@
         </div>
 
         <div style="display:flex; gap:10px; align-items:center;">
+            <div id="auth-wrapper" class="auth-wrapper">
+                <button id="btn-auth" onclick="abrirModalAuth()">Entrar</button>
+
+                <div id="menu-auth" class="menu-auth">
+                    <button onclick="abrirConfiguracoes()">
+                        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        Configurações
+                    </button>
+                    <button class="sair" onclick="fazerLogout()">
+                        <svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        Sair
+                    </button>
+                </div>
+            </div>
+
             <button class="btn-nova-vuln" id="btn-abrir-modal-vuln" onclick="abrirModalVuln()">
                 <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Acrescentar nova vulnerabilidade
@@ -122,10 +94,7 @@
     </div>
 
     <div class="painel-ia" id="painel-ia-container">
-        <h3 class="icon-inline">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18.7 8 12 14.7 9 11.7 4.7 16"/></svg>
-            Insights da IA
-        </h3>
+        <h3>Insights da IA</h3>
 
         <div id="ia-loading">
             Carregando aprendizado do histórico...
@@ -140,9 +109,9 @@
             <div class="ia-stat-box">
                 Melhor / Pior Risco
                 <strong>
-                    <span id="ia-melhor-risco" style="color: green;">--</span>
+                    <span id="ia-melhor-risco" style="color: #00C851;">--</span>
                     /
-                    <span id="ia-pior-risco" style="color: red;">--</span>
+                    <span id="ia-pior-risco" style="color: #ff4444;">--</span>
                 </strong>
             </div>
 
@@ -186,8 +155,8 @@
         </div>
 
         <!-- M4/M6 — KPIs de Governança -->
-        <div id="governance-kpis-box" class="sla-widget" style="display: none; background: rgba(123, 46, 255, 0.1); border-color: rgba(123, 46, 255, 0.5);">
-            <strong class="icon-inline" style="color: #9d5cff;">
+        <div id="governance-kpis-box" class="sla-widget" style="display: none;">
+            <strong class="icon-inline">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                 KPIs de Governança
             </strong>
@@ -209,6 +178,153 @@
         </div>
 
     </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SCANNER COM IA — SCA / SAST / DAST
+    ══════════════════════════════════════════════════════════ -->
+    <div class="scanner-section" id="scanner-section">
+
+        <div class="scanner-header">
+            <h2 class="scanner-titulo icon-inline">
+                <svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                Scanner Automático com IA
+            </h2>
+        </div>
+
+        <!-- Abas SCA / SAST / DAST -->
+        <div class="scanner-tabs" role="tablist">
+            <button class="scanner-tab active" id="tab-sca" role="tab" aria-selected="true" onclick="mudarAbaScan('sca')">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                SCA — Dependências
+            </button>
+            <button class="scanner-tab" id="tab-sast" role="tab" aria-selected="false" onclick="mudarAbaScan('sast')">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                SAST — Código
+            </button>
+            <button class="scanner-tab" id="tab-dast" role="tab" aria-selected="false" onclick="mudarAbaScan('dast')">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                DAST — URL
+            </button>
+        </div>
+
+        <!-- Painel SCA -->
+        <div class="scanner-panel" id="panel-sca">
+            <div class="scanner-desc">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Faça upload do <strong>requirements.txt</strong> para análise de componentes com vulnerabilidades conhecidas (CVE/CVSS).
+            </div>
+
+            <div class="upload-zone" id="upload-zone-sca"
+                 ondragover="handleDragOver(event, 'sca')"
+                 ondragleave="handleDragLeave(event, 'sca')"
+                 ondrop="handleDrop(event, 'sca')"
+                 onclick="document.getElementById('input-sca').click()">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <p class="upload-title">Arraste o arquivo aqui ou clique para selecionar</p>
+                <p class="upload-subtitle">Aceita: <strong>requirements.txt</strong></p>
+                <div class="upload-file-info" id="file-info-sca"></div>
+            </div>
+            <input type="file" id="input-sca" accept=".txt" style="display:none" onchange="onFileSelected('sca', this)">
+
+            <div class="scanner-actions">
+                <button class="btn-scan" id="btn-scan-sca" onclick="iniciarScan('sca')" disabled>
+                    <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Iniciar Scan SCA
+                </button>
+            </div>
+        </div>
+
+        <!-- Painel SAST -->
+        <div class="scanner-panel" id="panel-sast" style="display:none">
+            <div class="scanner-desc">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Faça upload de um arquivo <strong>.py</strong> ou um <strong>.zip</strong> com o projeto Python para análise estática de código.
+            </div>
+
+            <div class="upload-zone" id="upload-zone-sast"
+                 ondragover="handleDragOver(event, 'sast')"
+                 ondragleave="handleDragLeave(event, 'sast')"
+                 ondrop="handleDrop(event, 'sast')"
+                 onclick="document.getElementById('input-sast').click()">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <p class="upload-title">Arraste o arquivo aqui ou clique para selecionar</p>
+                <p class="upload-subtitle">Aceita: <strong>.py</strong> ou <strong>.zip</strong></p>
+                <div class="upload-file-info" id="file-info-sast"></div>
+            </div>
+            <input type="file" id="input-sast" accept=".py,.zip" style="display:none" onchange="onFileSelected('sast', this)">
+
+            <div class="scanner-actions">
+                <button class="btn-scan" id="btn-scan-sast" onclick="iniciarScan('sast')" disabled>
+                    <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Iniciar Scan SAST
+                </button>
+            </div>
+        </div>
+
+        <!-- Painel DAST -->
+        <div class="scanner-panel" id="panel-dast" style="display:none">
+            <div class="scanner-desc">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Informe a URL da aplicação web para análise dinâmica de segurança (OWASP ZAP). Apenas URLs públicas ou internas acessíveis.
+            </div>
+
+            <div class="dast-input-group">
+                <label for="dast-url" class="dast-label">URL do Alvo</label>
+                <div class="dast-field">
+                    <svg class="icon dast-url-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    <input
+                        type="url"
+                        id="dast-url"
+                        class="dast-url-input"
+                        placeholder="https://minha-aplicacao.com"
+                        oninput="onUrlChanged()"
+                    >
+                </div>
+            </div>
+
+            <div class="scanner-actions">
+                <button class="btn-scan" id="btn-scan-dast" onclick="iniciarScan('dast')" disabled>
+                    <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Iniciar Scan DAST
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading do Scanner -->
+        <div class="scanner-loading" id="scanner-loading" style="display:none">
+            <div class="scanner-spinner"></div>
+            <p class="scanner-loading-text" id="scanner-loading-text">Executando análise com IA...</p>
+        </div>
+
+        <!-- Resultados do Scanner -->
+        <div class="scanner-resultado" id="scanner-resultado" style="display:none">
+
+            <div class="resultado-header">
+                <div class="resultado-titulo icon-inline" id="resultado-titulo-texto">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Scan concluído
+                </div>
+                <button class="resultado-fechar" onclick="fecharResultadoScan()" aria-label="Fechar resultado">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <div class="resultado-stats" id="resultado-stats">
+                <!-- preenchido pelo JS -->
+            </div>
+
+            <div class="resultado-lista" id="resultado-lista">
+                <!-- preenchido pelo JS -->
+            </div>
+
+        </div>
+
+    </div>
+    <!-- /SCANNER COM IA -->
 
     <!-- MODAL: Nova Vulnerabilidade -->
     <div id="modal-vuln-fundo" class="modal-fundo" onclick="fecharModalVulnFundo(event)">
@@ -236,7 +352,7 @@
                         </div>
 
                         <div id="ia-sugestao">
-                            <div style="color: #004085;">
+                            <div style="color: var(--text-main);">
                                 <strong id="ia-categoria-texto">Categoria detectada...</strong>
                             </div>
                             <div>
@@ -459,7 +575,7 @@
                border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"
       ><br>
       <label style="color:#aaa; font-size:13px;">Senha</label><br>
-      <input id="reg-senha" type="password" placeholder="Mínimo 6 caracteres"
+      <input id="reg-senha" type="password" placeholder="Mínimo 12 caracteres" minlength="12" maxlength="128"
         style="width:100%; margin:6px 0 20px; padding:10px 14px;
                background:#1a1a2e; border:1px solid rgba(255,255,255,0.15);
                border-radius:8px; color:#fff; font-size:14px; box-sizing:border-box;"

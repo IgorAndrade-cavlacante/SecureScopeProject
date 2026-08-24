@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: securescope
+    runtime: python
+    plan: free
+    rootDir: SecureScopeProject
+    buildCommand: pip install -r securescope/requirements.txt
+    startCommand: gunicorn --chdir securescope --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: RATELIMIT_STORAGE_URI
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TRUST_PROXY_COUNT
+        value: "1"
+      - key: DB_POOL_MIN
+        value: "1"
+      - key: DB_POOL_MAX
+        value: "4"

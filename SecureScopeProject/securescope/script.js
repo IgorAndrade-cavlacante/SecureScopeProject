@@ -1,11 +1,22 @@
 const API_URL = window.location.origin;
 
-// M3 — Helper: retorna headers com Bearer token se o usuário estiver logado
+function getCookie(nome) {
+    const prefixo = `${encodeURIComponent(nome)}=`;
+    const item = document.cookie.split('; ').find((cookie) => cookie.startsWith(prefixo));
+    return item ? decodeURIComponent(item.slice(prefixo.length)) : '';
+}
+
+// O JWT fica em cookie HttpOnly. O JavaScript envia apenas o token CSRF
+// separado, que nao concede acesso a conta por si so.
 function getAuthHeaders(extra = {}) {
-    const token = localStorage.getItem('ss_token');
     const headers = { 'Content-Type': 'application/json', ...extra };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const csrfToken = getCookie('csrf_access_token');
+    if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken;
     return headers;
+}
+
+function usuarioEstaLogado() {
+    return Boolean(localStorage.getItem('ss_nome'));
 }
 
 // M3 — Atualiza o botão da navbar com o estado de autenticação
@@ -14,19 +25,15 @@ function atualizarBotaoAuth() {
     if (!btn) return;
     const nome = localStorage.getItem('ss_nome');
     if (nome) {
-        btn.innerHTML = nome;
+        btn.textContent = nome;
         btn.title = 'Clique para abrir o menu';
         btn.onclick = (e) => { e.stopPropagation(); toggleMenuAuth(); };
-        btn.style.background = 'rgba(0, 200, 81, 0.15)';
-        btn.style.borderColor = 'rgba(0, 200, 81, 0.5)';
-        btn.style.color = '#00C851';
+        btn.classList.add('is-authenticated');
     } else {
-        btn.innerHTML = 'Entrar';
+        btn.textContent = 'Entrar';
         btn.title = '';
         btn.onclick = abrirModalAuth;
-        btn.style.background = 'rgba(123, 46, 255, 0.2)';
-        btn.style.borderColor = 'rgba(123, 46, 255, 0.6)';
-        btn.style.color = '#c4a1ff';
+        btn.classList.remove('is-authenticated');
         fecharMenuAuth();
     }
 }
@@ -59,7 +66,7 @@ function abrirConfiguracoes() {
 function abrirModalAuth() {
     // Se já está logado, o clique no botão agora abre o menu dropdown
     // (Configurações / Sair) em vez de deslogar direto.
-    if (localStorage.getItem('ss_token')) { toggleMenuAuth(); return; }
+    if (usuarioEstaLogado()) { toggleMenuAuth(); return; }
     const fundo = document.getElementById('modal-auth-fundo');
     fundo.style.display = 'flex';
     document.getElementById('auth-email').focus();
@@ -106,7 +113,6 @@ async function fazerLogin() {
         const data = await res.json();
         if (!res.ok) { erroEl.innerText = data.erro || 'Credenciais inválidas.'; return; }
 
-        localStorage.setItem('ss_token', data.access_token);
         localStorage.setItem('ss_nome', data.nome);
         localStorage.setItem('ss_email', data.email);
         fecharModalAuth();
@@ -126,7 +132,11 @@ async function fazerRegistro() {
     erroEl.innerText = '';
 
     if (!nome || !email || !senha) { erroEl.innerText = 'Preencha todos os campos.'; return; }
-    if (senha.length < 6) { erroEl.innerText = 'Senha deve ter no mínimo 6 caracteres.'; return; }
+    if (senha.length < 12) { erroEl.innerText = 'Senha deve ter no mínimo 12 caracteres.'; return; }
+    if (!/[a-z]/.test(senha) || !/[A-Z]/.test(senha) || !/\d/.test(senha)) {
+        erroEl.innerText = 'Use letra maiúscula, letra minúscula e número.';
+        return;
+    }
 
     try {
         const res = await fetch(`${API_URL}/auth/register`, {
@@ -148,8 +158,16 @@ async function fazerRegistro() {
     }
 }
 
-function fazerLogout() {
-    localStorage.removeItem('ss_token');
+async function fazerLogout() {
+    try {
+        await fetch(`${API_URL}/auth/logout`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            credentials: 'same-origin'
+        });
+    } catch (e) {
+        // A limpeza local continua mesmo se a sessao ja tiver expirado.
+    }
     localStorage.removeItem('ss_nome');
     localStorage.removeItem('ss_email');
     atualizarBotaoAuth();
@@ -209,15 +227,32 @@ let perguntasWizard = [];
 let indiceWizard = 0;
 let respostasWizard = {};
 
-window.onload = () => {
+async function sincronizarSessao() {
+    try {
+        const response = await fetch(`${API_URL}/auth/me`, { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('sessao_invalida');
+        const usuario = await response.json();
+        localStorage.setItem('ss_nome', usuario.nome);
+        localStorage.setItem('ss_email', usuario.email);
+        return true;
+    } catch (e) {
+        localStorage.removeItem('ss_nome');
+        localStorage.removeItem('ss_email');
+        return false;
+    }
+}
+
+window.onload = async () => {
     carregarOrigens();
-    atualizarBotaoAuth(); // M3 — restaura estado do login do localStorage
+    inicializarScanner(); // Scanner IA — configura abas e eventos
+    const sessaoAtiva = await sincronizarSessao();
+    atualizarBotaoAuth();
 
     // M3 — as rotas de dados (vulnerabilidades, insights, SLA, governança)
     // agora exigem login, já que os dados são por usuário. Só carrega se
     // já existir um token salvo; senão deixa o painel no estado vazio
     // (ver mensagens em atualizarBotaoAuth/fazerLogin).
-    if (localStorage.getItem('ss_token')) {
+    if (sessaoAtiva) {
         carregarDadosProtegidos();
     } else {
         mostrarEstadoDeslogado();
@@ -225,7 +260,7 @@ window.onload = () => {
 
     // Abre modal de auth automaticamente quando o usuário vem da Home
     // via ?auth=login ou ?auth=registro (e ainda não está logado)
-    if (!localStorage.getItem('ss_token')) {
+    if (!sessaoAtiva) {
         const authParam = new URLSearchParams(window.location.search).get('auth');
         if (authParam === 'login' || authParam === 'registro') {
             abrirModalAuth();
@@ -394,9 +429,9 @@ document.getElementById('formVuln').addEventListener('submit', async (e) => {
         no_kev: document.getElementById('no_kev').checked || false
     };
 
-    const res = await fetch(`${API_URL}/vulnerabilidades`, {
-        method: 'POST',
-        headers: getAuthHeaders(),  // M3 — envia Bearer token
+        const res = await fetch(`${API_URL}/vulnerabilidades`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
         body: JSON.stringify(payload)
     });
 
@@ -442,9 +477,7 @@ async function buscarSugestaoIA(nome) {
     try {
         const res = await fetch(`${API_URL}/ia/sugerir`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ nome })
         });
 
@@ -574,7 +607,7 @@ async function validarVuln(id) {
 
     await fetch(`${API_URL}/vulnerabilidades/${id}/validar`, {
         method: 'PUT',
-        headers: getAuthHeaders()  // M3 — envia Bearer token
+        headers: getAuthHeaders()
     });
 
     mostrarToast(
@@ -595,7 +628,7 @@ async function acionarCircuitBreaker(id) {
 
     await fetch(`${API_URL}/circuit-breaker/${id}`, {
         method: 'POST',
-        headers: getAuthHeaders()  // M3 — envia Bearer token
+        headers: getAuthHeaders()
     });
 
     mostrarToast(
@@ -1079,4 +1112,422 @@ async function carregarKPIsGovernance() {
     } catch (error) {
         console.error('Erro ao carregar KPIs de Governança', error);
     }
+}
+
+// ═════════════════════════════════════════════════════
+// SCANNER COM IA — SCA / SAST / DAST
+// ═════════════════════════════════════════════════════
+
+// Estado interno do scanner
+const _scanner = {
+    abaAtiva: 'sca',
+    arquivoSCA: null,
+    arquivoSAST: null,
+    rodando: false
+};
+
+/**
+ * inicializarScanner — configura listeners de teclado para DAST
+ * e garante que os painéis comecem no estado correto.
+ */
+function inicializarScanner() {
+    // DAST: habilita/desabilita botão conforme URL digitada
+    const inputUrl = document.getElementById('dast-url');
+    if (inputUrl) {
+        inputUrl.addEventListener('input', onUrlChanged);
+        inputUrl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') iniciarScan('dast');
+        });
+    }
+}
+
+/**
+ * mudarAbaScan — alterna entre as abas SCA / SAST / DAST.
+ * @param {string} aba — 'sca' | 'sast' | 'dast'
+ */
+function mudarAbaScan(aba) {
+    _scanner.abaAtiva = aba;
+
+    // Atualiza classes das abas
+    ['sca', 'sast', 'dast'].forEach(t => {
+        const tab = document.getElementById(`tab-${t}`);
+        const panel = document.getElementById(`panel-${t}`);
+        if (tab) tab.classList.toggle('active', t === aba);
+        if (tab) tab.setAttribute('aria-selected', t === aba);
+        if (panel) panel.style.display = t === aba ? 'block' : 'none';
+    });
+
+    // Fecha resultado anterior ao trocar de aba
+    fecharResultadoScan();
+}
+
+// ─── DRAG & DROP ──────────────────────────────────────────────────────
+
+function handleDragOver(event, tipo) {
+    event.preventDefault();
+    document.getElementById(`upload-zone-${tipo}`)?.classList.add('dragover');
+}
+
+function handleDragLeave(event, tipo) {
+    document.getElementById(`upload-zone-${tipo}`)?.classList.remove('dragover');
+}
+
+function handleDrop(event, tipo) {
+    event.preventDefault();
+    const zone = document.getElementById(`upload-zone-${tipo}`);
+    zone?.classList.remove('dragover');
+    const file = event.dataTransfer?.files?.[0];
+    if (file) definirArquivo(tipo, file);
+}
+
+/**
+ * onFileSelected — callback do <input type="file">
+ */
+function onFileSelected(tipo, input) {
+    const file = input?.files?.[0];
+    if (file) definirArquivo(tipo, file);
+}
+
+/**
+ * definirArquivo — valida extensão e armazena o arquivo no estado.
+ */
+function definirArquivo(tipo, file) {
+    const extensoesValidas = {
+        sca:  ['.txt'],
+        sast: ['.py', '.zip']
+    };
+    const nomeMin = file.name.toLowerCase();
+    const validos = extensoesValidas[tipo] || [];
+    const ok = validos.some(ext => nomeMin.endsWith(ext));
+
+    if (!ok) {
+        mostrarToast(`Tipo de arquivo inválido. Use: ${validos.join(' ou ')}`, 'erro');
+        return;
+    }
+
+    if (tipo === 'sca')  _scanner.arquivoSCA  = file;
+    if (tipo === 'sast') _scanner.arquivoSAST = file;
+
+    // Atualiza visual da upload zone
+    const zone = document.getElementById(`upload-zone-${tipo}`);
+    const info = document.getElementById(`file-info-${tipo}`);
+    if (zone) zone.classList.add('has-file');
+    if (info) {
+        info.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" style="color:#00C851;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            ${file.name} (${(file.size / 1024).toFixed(1)} KB)
+        `;
+    }
+
+    const btn = document.getElementById(`btn-scan-${tipo}`);
+    if (btn) btn.disabled = false;
+}
+
+/**
+ * onUrlChanged — habilita botão DAST quando a URL parece válida.
+ */
+function onUrlChanged() {
+    const url = document.getElementById('dast-url')?.value?.trim() || '';
+    const btn = document.getElementById('btn-scan-dast');
+    if (btn) btn.disabled = !url.startsWith('http');
+}
+
+// ─── SCAN DISPATCHER ──────────────────────────────────────────────────
+
+/**
+ * iniciarScan — ponto central de entrada; despacha para SCA/SAST/DAST.
+ * @param {string} tipo — 'sca' | 'sast' | 'dast'
+ */
+async function iniciarScan(tipo) {
+    if (_scanner.rodando) return;
+
+    if (!usuarioEstaLogado()) {
+        mostrarToast('Faça login antes de executar um scan.', 'alerta');
+        abrirModalAuth();
+        return;
+    }
+
+    _scanner.rodando = true;
+    fecharResultadoScan();
+    mostrarLoadingScan(`Executando scan ${tipo.toUpperCase()} com IA...`);
+
+    try {
+        let dados;
+        if (tipo === 'sca')  dados = await executarScannerSCA(_scanner.arquivoSCA);
+        if (tipo === 'sast') dados = await executarScannerSAST(_scanner.arquivoSAST);
+        if (tipo === 'dast') dados = await executarScannerDAST(
+            document.getElementById('dast-url')?.value?.trim()
+        );
+
+        if (dados) {
+            renderizarResultadoScanner(dados, tipo);
+            // Recarrega tabela para refletir novos achados importados
+            if (usuarioEstaLogado()) {
+                carregarVulnerabilidades();
+                carregarSLAWidget();
+                carregarInsightsIA();
+                carregarKPIsGovernance();
+            }
+        }
+    } catch (err) {
+        ocultarLoadingScan();
+        console.error('[Scanner]', err);
+        mostrarToast('Erro inesperado no scanner. Veja o console.', 'erro');
+    } finally {
+        _scanner.rodando = false;
+    }
+}
+
+// ─── API CALLS ────────────────────────────────────────────────────────
+
+/**
+ * executarScannerSCA — POST /scanner/analisar (form-data, campo "arquivo").
+ */
+async function executarScannerSCA(arquivo) {
+    if (!arquivo) {
+        mostrarToast('Selecione o requirements.txt primeiro.', 'alerta');
+        ocultarLoadingScan();
+        return null;
+    }
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+
+    const res = await fetch(`${API_URL}/scanner/analisar`, {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': getCookie('csrf_access_token') },
+        credentials: 'same-origin',
+        body: form
+    });
+    return tratarRespostaScan(res, 'SCA');
+}
+
+/**
+ * executarScannerSAST — POST /scanner/analisar-codigo (form-data, campo "arquivo").
+ */
+async function executarScannerSAST(arquivo) {
+    if (!arquivo) {
+        mostrarToast('Selecione um arquivo .py ou .zip primeiro.', 'alerta');
+        ocultarLoadingScan();
+        return null;
+    }
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+
+    const res = await fetch(`${API_URL}/scanner/analisar-codigo`, {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': getCookie('csrf_access_token') },
+        credentials: 'same-origin',
+        body: form
+    });
+    return tratarRespostaScan(res, 'SAST');
+}
+
+/**
+ * executarScannerDAST — POST /scanner/analisar-url (JSON body).
+ */
+async function executarScannerDAST(url) {
+    if (!url) {
+        mostrarToast('Informe uma URL válida antes de iniciar.', 'alerta');
+        ocultarLoadingScan();
+        return null;
+    }
+    const res = await fetch(`${API_URL}/scanner/analisar-url`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'same-origin',
+        body: JSON.stringify({ url })
+    });
+    return tratarRespostaScan(res, 'DAST');
+}
+
+/**
+ * tratarRespostaScan — trata códigos de erro HTTP e devolve JSON.
+ */
+async function tratarRespostaScan(res, nomeTipo) {
+    ocultarLoadingScan();
+
+    if (res.status === 401) {
+        mostrarToast('Sessão expirada. Faça login novamente.', 'erro');
+        fazerLogout();
+        return null;
+    }
+
+    let json;
+    try { json = await res.json(); } catch { json = {}; }
+
+    if (res.status === 400) {
+        // Erros de validação / SSRF bloqueado
+        const msg = json.erro || json.message || `Erro 400 no scan ${nomeTipo}.`;
+        mostrarToast(msg, 'erro');
+        return null;
+    }
+
+    if (res.status === 502 || res.status === 503) {
+        // ZAP ou serviço externo indisponível
+        const msg = json.erro || `Serviço ${nomeTipo} indisponível. Tente novamente mais tarde.`;
+        mostrarToast(msg, 'alerta');
+        return null;
+    }
+
+    if (!res.ok) {
+        const msg = json.erro || `Erro ${res.status} ao executar scan ${nomeTipo}.`;
+        mostrarToast(msg, 'erro');
+        return null;
+    }
+
+    return json;
+}
+
+// ─── UI HELPERS ───────────────────────────────────────────────────────
+
+function mostrarLoadingScan(texto = 'Executando análise com IA...') {
+    const el = document.getElementById('scanner-loading');
+    const txt = document.getElementById('scanner-loading-text');
+    if (txt) txt.textContent = texto;
+    if (el)  el.style.display = 'flex';
+    // Desabilita botões durante o scan
+    ['btn-scan-sca', 'btn-scan-sast', 'btn-scan-dast'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.disabled = true;
+    });
+}
+
+function ocultarLoadingScan() {
+    const el = document.getElementById('scanner-loading');
+    if (el) el.style.display = 'none';
+    // Re-habilita apenas o botão da aba com arquivo selecionado
+    const tipo = _scanner.abaAtiva;
+    if (tipo === 'sca'  && _scanner.arquivoSCA)  document.getElementById('btn-scan-sca').disabled  = false;
+    if (tipo === 'sast' && _scanner.arquivoSAST) document.getElementById('btn-scan-sast').disabled = false;
+    if (tipo === 'dast') {
+        const url = document.getElementById('dast-url')?.value?.trim();
+        const btn = document.getElementById('btn-scan-dast');
+        if (btn) btn.disabled = !url?.startsWith('http');
+    }
+}
+
+function fecharResultadoScan() {
+    const el = document.getElementById('scanner-resultado');
+    if (el) el.style.display = 'none';
+}
+
+/**
+ * renderizarResultadoScanner — exibe os dados do scan de forma visual.
+ * @param {object} dados — JSON retornado pela API
+ * @param {string} tipo  — 'sca' | 'sast' | 'dast'
+ */
+function renderizarResultadoScanner(dados, tipo) {
+    const tipoLabels = { sca: 'SCA — Dependências', sast: 'SAST — Código', dast: 'DAST — URL' };
+    const total  = dados.total_vulnerabilidades_encontradas ?? dados.vulnerabilidades?.length ?? 0;
+    const descartados = dados.achados_descartados ?? 0;
+    const triagem = dados.triagem_aplicada ?? false;
+    const mockZAP = dados.zap_mock_usado ?? false;
+    const vulns = dados.vulnerabilidades ?? [];
+
+    // ─ Header
+    const tituloEl = document.getElementById('resultado-titulo-texto');
+    if (tituloEl) {
+        const iconeOk = `<svg class="icon" viewBox="0 0 24 24" style="color:#00C851;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+        const iconeWarn = `<svg class="icon" viewBox="0 0 24 24" style="color:#ffc107;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        tituloEl.innerHTML = `${total > 0 ? iconeWarn : iconeOk} Scan ${tipoLabels[tipo]} concluído — Scan ID #${dados.scan_id ?? '—'}`;
+    }
+
+    // ─ Stats cards
+    const statsEl = document.getElementById('resultado-stats');
+    if (statsEl) {
+        const totalCor  = total  > 0 ? 'danger' : 'success';
+        const descCor   = descartados > 0 ? 'success' : 'info';
+        const triagCor  = triagem ? 'success' : 'warning';
+
+        statsEl.innerHTML = `
+            <div class="resultado-stat-card">
+                <div class="resultado-stat-label">Vulnerabilidades</div>
+                <div class="resultado-stat-value ${totalCor}">${total}</div>
+            </div>
+            <div class="resultado-stat-card">
+                <div class="resultado-stat-label">Descartadas pela IA</div>
+                <div class="resultado-stat-value ${descCor}">${descartados}</div>
+            </div>
+            <div class="resultado-stat-card">
+                <div class="resultado-stat-label">Triagem IA</div>
+                <div class="resultado-stat-value ${triagCor}">${triagem ? 'Ativa' : 'Off'}</div>
+            </div>
+            ${ mockZAP ? `
+            <div class="resultado-stat-card">
+                <div class="resultado-stat-label">Modo ZAP</div>
+                <div class="resultado-stat-value warning">Mock</div>
+            </div>` : ''}
+        `;
+    }
+
+    // ─ Lista de achados
+    const listaEl = document.getElementById('resultado-lista');
+    if (listaEl) {
+        if (vulns.length === 0) {
+            listaEl.innerHTML = `
+                <div class="resultado-vazio">
+                    <svg class="icon" viewBox="0 0 24 24" style="width:20px;height:20px;color:#00C851;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Nenhuma vulnerabilidade crítica encontrada!
+                </div>
+            `;
+        } else {
+            listaEl.innerHTML = vulns.map((v, idx) => {
+                const grav = (v.gravidade || '').toLowerCase();
+                const gravClasse = grav.includes('crít') ? 'critica'
+                    : grav.includes('alt') ? 'alta'
+                    : grav.includes('méd') || grav.includes('med') ? 'media'
+                    : 'baixa';
+
+                const cvss   = v.cvss_score != null ? `CVSS: ${parseFloat(v.cvss_score).toFixed(1)}` : '';
+                const sla    = v.sla_prioridade ? `SLA: ${v.sla_prioridade}` : '';
+                const vulnId = v.vuln_id ? `#${v.vuln_id}` : '';
+                const origem = v.origem || tipo.toUpperCase();
+
+                const metas = [cvss, sla, vulnId ? `ID: ${vulnId}` : '', `Origem: ${origem}`]
+                    .filter(Boolean)
+                    .map(m => `<span>${m}</span>`).join('');
+
+                const delay = idx * 60;
+
+                return `
+                    <div class="resultado-vuln-item" style="animation-delay:${delay}ms;">
+                        <div class="resultado-vuln-gravidade ${gravClasse}"></div>
+                        <div class="resultado-vuln-info">
+                            <div class="resultado-vuln-nome">${v.nome || v.cve_id || '—'}</div>
+                            <div class="resultado-vuln-meta">${metas}</div>
+                        </div>
+                        <span class="badge-prioridade ${gravClasse === 'critica' ? 'badge-critica' : gravClasse === 'alta' ? 'badge-alta' : 'badge-moderada'}">
+                            <span class="badge-dot"></span>${v.gravidade || '—'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+
+            if (triagem && descartados > 0) {
+                listaEl.innerHTML += `
+                    <div style="padding: 6px 0;">
+                        <span class="resultado-triagem-badge">
+                            <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+                            Triagem IA: ${descartados} achado(s) descartado(s) automaticamente
+                        </span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    // Exibe o bloco de resultado
+    const resultadoEl = document.getElementById('scanner-resultado');
+    if (resultadoEl) resultadoEl.style.display = 'block';
+
+    // Scroll suave até o resultado
+    resultadoEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const tipoLabel = tipoLabels[tipo] || tipo.toUpperCase();
+    mostrarToast(
+        total > 0
+            ? `Scan ${tipoLabel}: ${total} vuln(s) encontrada(s).`
+            : `Scan ${tipoLabel} concluído — nenhuma vulnerabilidade!`,
+        total > 0 ? 'alerta' : 'sucesso'
+    );
 }

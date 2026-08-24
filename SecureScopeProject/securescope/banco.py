@@ -22,7 +22,7 @@ def criar_tabelas(conn):
             email TEXT NOT NULL UNIQUE,
             senha_hash TEXT NOT NULL,
             nome TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'analista',
+            role TEXT NOT NULL DEFAULT 'analista' CHECK(role IN ('analista', 'admin')),
             criado_em TEXT NOT NULL
         )
     ''')
@@ -59,6 +59,19 @@ def criar_tabelas(conn):
         )
     ''')
 
+    # Scanner — Fase 1: rastreia cada execução do scanner automatizado.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scans (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            nome_arquivo TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'em_progresso',
+            total_achados INTEGER NOT NULL DEFAULT 0,
+            data_inicio TEXT NOT NULL,
+            data_fim TEXT
+        )
+    ''')
+
     conn.commit()
     print("Tabelas criadas/verificadas com sucesso.")
 
@@ -87,6 +100,9 @@ COLUNAS_IA_CONTEXTO = {
     # Sem valor padrão fixo: registros antigos ficam com usuario_id NULL e
     # devem ser atribuídos manualmente a um usuário (ver plano de migração).
     "usuario_id":               "INTEGER REFERENCES usuarios(id)",
+    # Scanner — Fase 1: rastreabilidade de achados gerados automaticamente.
+    "origem_scan":              "INTEGER DEFAULT NULL",   # FK para scans.id (NULL = entrada manual)
+    "confianca_ia":             "REAL NOT NULL DEFAULT 0.0",  # Reservado para consenso multi-LLM (Fase 3)
 }
 
 def migrar_colunas_contexto_ia(conn):
@@ -118,6 +134,19 @@ def migrar_colunas_contexto_ia(conn):
             data_resolucao TEXT,
             status_sla TEXT DEFAULT 'Em Prazo',
             FOREIGN KEY(vulnerabilidade_id) REFERENCES vulnerabilidades(id)
+        )
+    ''')
+
+    # Scanner — Fase 1: garantir que a tabela scans existe (idempotente).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scans (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            nome_arquivo TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'em_progresso',
+            total_achados INTEGER NOT NULL DEFAULT 0,
+            data_inicio TEXT NOT NULL,
+            data_fim TEXT
         )
     ''')
 
@@ -184,8 +213,10 @@ def inserir_historico(conn, vulnerabilidade_id, acao, responsavel):
 
 def listar_vulnerabilidades(conn, ordenar_por_score=True):
     cursor = conn.cursor()
-    ordem = "ORDER BY score DESC" if ordenar_por_score else ""
-    cursor.execute(f"SELECT * FROM vulnerabilidades {ordem}")
+    if ordenar_por_score:
+        cursor.execute("SELECT * FROM vulnerabilidades ORDER BY score DESC")
+    else:
+        cursor.execute("SELECT * FROM vulnerabilidades")
     return cursor.fetchall()
 
 if __name__ == '__main__':

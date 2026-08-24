@@ -1,0 +1,30 @@
+# Segredos e configuracoes locais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.appdeploy
+
+# Dados e artefatos locais
+*.db
+*.sqlite
+*.sqlite3
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configuracao local de agentes e documentos internos
+.agent/
+SECURITY_TODO.md
+SecureScope_Plano_Scanner_Multi_LLM.docx
+
+# Editor e sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

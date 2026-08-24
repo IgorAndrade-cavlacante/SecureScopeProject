@@ -5,25 +5,44 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token,
-    jwt_required, get_jwt_identity
+    jwt_required, get_jwt_identity,
+    set_access_cookies, unset_jwt_cookies
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
+import re
+import secrets
+import logging
+import hashlib
 from pathlib import Path
 from datetime import datetime, timedelta
 import ia
 import banco
 import db
+import scanner
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = APP_DIR.parent
 HOME_DIR = PROJECT_DIR / "Home"
 IMAGES_DIR = PROJECT_DIR / "images"
 RATE_DIR = PROJECT_DIR / "rate"
+ABOUT_DIR = PROJECT_DIR / "about"
 
 # O frontend fica em diretorios diferentes do backend. As rotas explicitas
 # evitam expor o diretorio inteiro do app (inclusive arquivos como o .env).
 app = Flask(__name__, static_folder=None)
+
+_proxy_count = int(os.environ.get("TRUST_PROXY_COUNT", "0"))
+if _proxy_count > 0:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=_proxy_count,
+        x_proto=_proxy_count,
+        x_host=_proxy_count,
+    )
 
 @app.route('/')
 @app.route('/home')
@@ -50,28 +69,152 @@ def serve_painel_css():
 def serve_painel_script():
     return send_from_directory(APP_DIR, 'script.js')
 
+@app.route('/site-search.js')
+def serve_site_search_script():
+    return send_from_directory(APP_DIR, 'site-search.js')
+
+@app.route('/site-header.css')
+def serve_site_header_css():
+    return send_from_directory(APP_DIR, 'site-header.css')
+
 @app.route('/images/<path:filename>')
 def serve_images(filename):
     return send_from_directory(IMAGES_DIR, filename)
+
+@app.route('/rate')
+@app.route('/rate/')
+def serve_rate():
+    return send_from_directory(RATE_DIR, 'Rate.html')
 
 @app.route('/rate/<path:filename>')
 def serve_rate_files(filename):
     return send_from_directory(RATE_DIR, filename)
 
-# M3 — JWT: chave secreta (via variável de ambiente em produção; o valor
-# abaixo só existe como fallback para rodar localmente sem configurar nada).
-app.config["JWT_SECRET_KEY"] = os.environ.get(
-    "JWT_SECRET_KEY", "securescope-jwt-secret-2024-mude-em-producao"
+@app.route('/about')
+@app.route('/about/')
+def serve_about():
+    return send_from_directory(ABOUT_DIR, 'about.html')
+
+@app.route('/about/<path:filename>')
+def serve_about_files(filename):
+    return send_from_directory(ABOUT_DIR, filename)
+
+APP_ENV = os.environ.get("APP_ENV", os.environ.get("FLASK_ENV", "development")).lower()
+IS_PRODUCTION = APP_ENV == "production"
+
+# Em desenvolvimento, uma chave efemera evita segredos fixos no codigo. Em
+# producao, a aplicacao falha na inicializacao se a chave estiver ausente ou
+# for fraca, em vez de subir com uma configuracao previsivel.
+_jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+if IS_PRODUCTION and len(_jwt_secret) < 32:
+    raise RuntimeError("JWT_SECRET_KEY deve existir e ter ao menos 32 caracteres em producao.")
+if not _jwt_secret:
+    _jwt_secret = secrets.token_urlsafe(48)
+    logging.warning("JWT_SECRET_KEY ausente; usando chave efemera apenas para desenvolvimento.")
+
+app.config.update(
+    JWT_SECRET_KEY=_jwt_secret,
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(
+        minutes=int(os.environ.get("JWT_ACCESS_TOKEN_MINUTES", "60"))
+    ),
+    JWT_TOKEN_LOCATION=["cookies"],
+    JWT_COOKIE_SECURE=IS_PRODUCTION,
+    JWT_COOKIE_SAMESITE="Strict",
+    JWT_COOKIE_CSRF_PROTECT=True,
+    JWT_ACCESS_COOKIE_PATH="/",
 )
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
+
+# Limite de upload: rejeita no nível WSGI antes de bufferizar na memória.
+# 15 MB dá margem acima do limite de 10 MB por arquivo do scanner.py.
+# Aplica-se a TODAS as rotas (incluindo /scanner/analisar e /scanner/analisar-codigo).
+app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB
+
 jwt = JWTManager(app)
 
-# CORS — em desenvolvimento aceita qualquer origem ("*"). Em produção,
-# defina ALLOWED_ORIGINS com o(s) domínio(s) do frontend, separados por
-# vírgula (ex: "https://securescope.vercel.app,https://www.securescope.com").
+# Nunca usa CORS aberto. O frontend principal e servido pela mesma aplicacao;
+# origens adicionais precisam ser declaradas explicitamente.
 _origins_env = os.environ.get("ALLOWED_ORIGINS")
-_origins = [o.strip() for o in _origins_env.split(",")] if _origins_env else "*"
-CORS(app, resources={r"/*": {"origins": _origins}})
+if IS_PRODUCTION and not _origins_env:
+    raise RuntimeError("ALLOWED_ORIGINS deve ser configurada em producao.")
+_origins = (
+    [o.strip().rstrip("/") for o in _origins_env.split(",") if o.strip()]
+    if _origins_env
+    else ["http://127.0.0.1:5000", "http://localhost:5000"]
+)
+CORS(
+    app,
+    resources={r"/*": {"origins": _origins}},
+    supports_credentials=True,
+)
+
+_rate_storage = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
+if IS_PRODUCTION and _rate_storage == "memory://":
+    raise RuntimeError("RATELIMIT_STORAGE_URI deve usar Redis ou outro storage compartilhado em producao.")
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri=_rate_storage,
+    headers_enabled=True,
+)
+
+
+def rate_limit_usuario():
+    """Limita por usuario autenticado e usa IP como fallback."""
+    try:
+        identidade = get_jwt_identity()
+        if identidade:
+            return f"usuario:{identidade}"
+    except RuntimeError:
+        pass
+    return f"ip:{get_remote_address()}"
+
+
+def rate_limit_conta_login():
+    """Protege uma conta contra tentativas distribuidas sem armazenar o e-mail."""
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get("email", "")).strip().lower()
+    digest = hashlib.sha256(email.encode("utf-8")).hexdigest()
+    return f"conta:{digest}"
+
+
+@app.after_request
+def aplicar_cabecalhos_seguranca(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    )
+    response.headers["Cache-Control"] = "no-store" if request.path.startswith("/auth/") else response.headers.get("Cache-Control", "no-cache")
+    if IS_PRODUCTION:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.errorhandler(429)
+def limite_excedido(_erro):
+    return jsonify({"erro": "Muitas requisicoes. Aguarde antes de tentar novamente."}), 429
+
+
+@jwt.unauthorized_loader
+def jwt_ausente(_motivo):
+    return jsonify({"erro": "Autenticacao necessaria."}), 401
+
+
+@jwt.invalid_token_loader
+def jwt_invalido(_motivo):
+    return jsonify({"erro": "Sessao invalida."}), 401
+
+
+@jwt.expired_token_loader
+def jwt_expirado(_cabecalho, _payload):
+    return jsonify({"erro": "Sessao expirada."}), 401
 
 VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)")
 
@@ -79,17 +222,20 @@ def get_db_connection():
     return db.get_db_connection()
 
 def usuario_id_atual(conn=None):
-    """Resolve o id numérico do usuário autenticado a partir do e-mail
-    gravado no JWT (get_jwt_identity()). Levanta erro se usado fora de uma
+    """Resolve o id numerico do usuario autenticado a partir do JWT.
+    Levanta erro se usado fora de uma
     rota protegida por @jwt_required().
 
     Aceita um parâmetro opcional 'conn' para reutilizar a conexão da rota
     chamadora — evitando abrir uma conexão extra só para buscar o id."""
-    email = get_jwt_identity()
+    try:
+        identidade = int(get_jwt_identity())
+    except (TypeError, ValueError):
+        return None
     fechar = conn is None
     if conn is None:
         conn = get_db_connection()
-    usuario = conn.execute("SELECT id FROM usuarios WHERE email = ?", (email,)).fetchone()
+    usuario = conn.execute("SELECT id FROM usuarios WHERE id = ?", (identidade,)).fetchone()
     if fechar:
         conn.close()
     if not usuario:
@@ -158,19 +304,51 @@ preparar_banco_para_ia()
 # M3 — AUTENTICAÇÃO (JWT)
 # ─────────────────────────────────────────────
 
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,253}$")
+SENHA_MINIMA = 12
+SENHA_MAXIMA = 128
+_HASH_COMPARACAO = generate_password_hash(secrets.token_urlsafe(32), method="scrypt")
+CADASTRO_PUBLICO_ATIVO = os.environ.get(
+    "ALLOW_PUBLIC_REGISTRATION", "0" if IS_PRODUCTION else "1"
+).lower() in ("1", "true", "yes")
+
+
+def validar_senha(senha):
+    if not isinstance(senha, str) or not SENHA_MINIMA <= len(senha) <= SENHA_MAXIMA:
+        return f"A senha deve ter entre {SENHA_MINIMA} e {SENHA_MAXIMA} caracteres."
+    if not re.search(r"[a-z]", senha) or not re.search(r"[A-Z]", senha) or not re.search(r"\d", senha):
+        return "A senha deve conter letra maiuscula, letra minuscula e numero."
+    return None
+
 @app.route('/auth/register', methods=['POST'])
+@limiter.limit(os.environ.get("RATELIMIT_REGISTER", "5 per hour"))
 def registrar_usuario():
     """Cria um novo usuário. Em produção, esta rota deveria ser protegida
     por um admin. Por ora, é aberta para facilitar o primeiro acesso."""
-    dados = request.get_json()
+    if not CADASTRO_PUBLICO_ATIVO:
+        return jsonify({"erro": "Cadastro publico desabilitado."}), 403
+
+    dados = request.get_json(silent=True)
     for campo in ['email', 'senha', 'nome']:
         if not dados or not dados.get(campo):
             return jsonify({"erro": f"Campo obrigatório ausente: '{campo}'"}), 400
+    if not all(isinstance(dados[campo], str) for campo in ('email', 'senha', 'nome')):
+        return jsonify({"erro": "Campos de cadastro invalidos."}), 400
 
     email = dados['email'].strip().lower()
-    senha_hash = generate_password_hash(dados['senha'])
     nome = dados['nome'].strip()
-    role = dados.get('role', 'analista')
+    if not EMAIL_RE.fullmatch(email):
+        return jsonify({"erro": "E-mail invalido."}), 400
+    if not 2 <= len(nome) <= 100:
+        return jsonify({"erro": "O nome deve ter entre 2 e 100 caracteres."}), 400
+    erro_senha = validar_senha(dados['senha'])
+    if erro_senha:
+        return jsonify({"erro": erro_senha}), 400
+
+    senha_hash = generate_password_hash(dados['senha'], method="scrypt")
+    # Cadastro publico sempre recebe o menor privilegio. Contas administrativas
+    # devem ser criadas por um fluxo administrativo separado.
+    role = 'analista'
     criado_em = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_db_connection()
@@ -189,37 +367,58 @@ def registrar_usuario():
 
 
 @app.route('/auth/login', methods=['POST'])
+@limiter.limit(os.environ.get("RATELIMIT_LOGIN", "5 per minute;20 per hour"))
+@limiter.limit(os.environ.get("RATELIMIT_LOGIN_ACCOUNT", "10 per hour"), key_func=rate_limit_conta_login)
 def login():
     """Valida credenciais e retorna um JWT de acesso."""
-    dados = request.get_json()
+    dados = request.get_json(silent=True)
     if not dados or not dados.get('email') or not dados.get('senha'):
         return jsonify({"erro": "E-mail e senha são obrigatórios."}), 400
+    if not isinstance(dados['email'], str) or not isinstance(dados['senha'], str):
+        return jsonify({"erro": "Credenciais inválidas."}), 401
+    if len(dados['email']) > 320 or len(dados['senha']) > SENHA_MAXIMA:
+        return jsonify({"erro": "Credenciais inválidas."}), 401
 
     email = dados['email'].strip().lower()
     conn = get_db_connection()
     usuario = conn.execute("SELECT * FROM usuarios WHERE email = ?", (email,)).fetchone()
     conn.close()
 
-    if not usuario or not check_password_hash(usuario['senha_hash'], dados['senha']):
+    hash_armazenado = usuario['senha_hash'] if usuario else _HASH_COMPARACAO
+    credenciais_validas = check_password_hash(hash_armazenado, dados['senha'])
+    if not usuario or not credenciais_validas:
+        conta_hash = hashlib.sha256(email.encode("utf-8")).hexdigest()[:12]
+        app.logger.warning(
+            "Falha de login conta=%s ip=%s", conta_hash, get_remote_address()
+        )
         return jsonify({"erro": "Credenciais inválidas."}), 401
 
-    # identity = email do usuário (fica gravada no token e recuperável via get_jwt_identity())
-    token = create_access_token(identity=usuario['email'])
-    return jsonify({
-        "access_token": token,
+    token = create_access_token(identity=str(usuario['id']))
+    resposta = jsonify({
         "nome": usuario['nome'],
         "email": usuario['email'],
         "role": usuario['role']
-    }), 200
+    })
+    set_access_cookies(resposta, token)
+    return resposta, 200
+
+
+@app.route('/auth/logout', methods=['POST'])
+@jwt_required()
+@limiter.limit("10 per minute", key_func=rate_limit_usuario)
+def logout():
+    resposta = jsonify({"message": "Sessao encerrada."})
+    unset_jwt_cookies(resposta)
+    return resposta, 200
 
 
 @app.route('/auth/me', methods=['GET'])
 @jwt_required()
 def me():
     """Retorna os dados do usuário autenticado a partir do token."""
-    email = get_jwt_identity()
+    uid = usuario_id_atual()
     conn = get_db_connection()
-    usuario = conn.execute("SELECT id, email, nome, role, criado_em FROM usuarios WHERE email = ?", (email,)).fetchone()
+    usuario = conn.execute("SELECT id, email, nome, role, criado_em FROM usuarios WHERE id = ?", (uid,)).fetchone()
     conn.close()
     if not usuario:
         return jsonify({"erro": "Usuário não encontrado."}), 404
@@ -431,9 +630,11 @@ def listar_origens():
     return jsonify(list(ia.ORIGENS_VALIDAS))
 
 @app.route('/ia/sugerir', methods=['POST'])
+@jwt_required()
+@limiter.limit(os.environ.get("RATELIMIT_IA", "30 per hour"), key_func=rate_limit_usuario)
 def sugerir_valores_ia():
-    dados = request.get_json()
-    nome_ameaca = dados.get('nome', '')
+    dados = request.get_json(silent=True) or {}
+    nome_ameaca = str(dados.get('nome', ''))[:200]
     sugestao = ia.analisar_nome(nome_ameaca)
     sugestao['perguntas'] = ia.gerar_perguntas_contexto(sugestao.get('categoria', 'Geral/Desconhecida'))
     return jsonify(sugestao)
@@ -691,10 +892,694 @@ def analise_vulnerabilidade(id):
     }), 200
 
 # ─────────────────────────────────────────────
+# SCANNER — FASE 1 (SCA / Software Composition Analysis)
+# ─────────────────────────────────────────────
+
+@app.route('/scanner/analisar', methods=['POST'])
+@jwt_required()
+@limiter.limit(os.environ.get("RATELIMIT_SCANNER", "10 per hour"), key_func=rate_limit_usuario)
+def scanner_analisar():
+    """Fase 1 — SCA: recebe um requirements.txt via multipart/form-data,
+    executa a análise de composição de software contra o OSV.dev e insere
+    os achados na tabela 'vulnerabilidades' existente.
+
+    Campos do form-data:
+        arquivo: arquivo requirements.txt (obrigatório)
+
+    Retorna JSON com resumo do scan e lista de vulnerabilidades encontradas.
+    """
+    # — Validação do upload —
+    if 'arquivo' not in request.files:
+        return jsonify({"erro": "Campo 'arquivo' não encontrado no form-data."}), 400
+
+    arquivo = request.files['arquivo']
+
+    if not arquivo.filename:
+        return jsonify({"erro": "Nenhum arquivo selecionado."}), 400
+
+    nome_arquivo = arquivo.filename.strip()
+    if not nome_arquivo.endswith('.txt'):
+        return jsonify({
+            "erro": "Apenas arquivos .txt são aceitos. Envie um requirements.txt."
+        }), 400
+
+    # Lê o conteúdo sem executar nada (estágio 1 do pipeline — entrada segura)
+    try:
+        conteudo = arquivo.read().decode('utf-8')
+    except UnicodeDecodeError:
+        return jsonify({"erro": "Não foi possível decodificar o arquivo. Use UTF-8."}), 400
+
+    conn = get_db_connection()
+    uid = usuario_id_atual(conn)
+    data_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Cria registro do scan (status inicial: em_progresso)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO scans (usuario_id, nome_arquivo, status, data_inicio) "
+        "VALUES (?, ?, 'em_progresso', ?) RETURNING id",
+        (uid, nome_arquivo, data_inicio)
+    )
+    scan_id = cursor.fetchone()["id"]
+    conn.commit()
+
+    # — Estágio 2: Varredura SCA —
+    resultado_sca = scanner.executar_sca(conteudo)
+
+    # Se houve erro de rede ou parse, encerra o scan com status de erro
+    if resultado_sca["erro"]:
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": resultado_sca["erro"],
+            "total_pacotes_analisados": resultado_sca["total_pacotes"],
+        }), 502
+
+    # — Estágio 3: (Multi-LLM já aplicado dentro de scanner.executar_sca) —
+
+    # — Estágio 4: Consolidação na tabela vulnerabilidades —
+    ids_inseridos = []
+    achados_resumo = []
+
+    try:
+        for achado in resultado_sca["achados"]:
+            # Categoria detectada pela IA local (mesmo motor usado no input manual)
+            categoria = ia.detectar_categoria(achado["nome"])
+
+            # Prioridade via motor v2 (tripartido CVSS/EPSS/KEV) quando CVSS disponível
+            cvss = achado["cvss_score"]
+            if cvss > 0:
+                prioridade, nivel_sla, sla_prazo_dias, explicacao_fatores = \
+                    ia.calcular_prioridade_v2(
+                        cvss,
+                        achado["epss_score"],
+                        achado["no_kev"],
+                        {
+                            "exposta_internet": achado["exposta_internet"],
+                            "exploit_publico": achado["exploit_publico"],
+                            "dados_sensiveis": achado["dados_sensiveis"],
+                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                            "ambiente_producao": achado["ambiente_producao"],
+                        }
+                    )
+                sla_prioridade = nivel_sla
+            else:
+                score_base = round(
+                    (achado["impacto"] * 0.4) +
+                    (achado["frequencia"] * 0.3) +
+                    (achado["gravidade"] * 0.3), 2
+                )
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
+                sla_prioridade, sla_prazo_dias = "P3", 90
+
+            score = round(
+                (achado["impacto"] * 0.4) +
+                (achado["frequencia"] * 0.3) +
+                (achado["gravidade"] * 0.3), 2
+            )
+            explicacao_texto = " | ".join(explicacao_fatores)
+            data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO vulnerabilidades
+                    (nome, impacto, frequencia, gravidade, score, status, data,
+                     exposta_internet, exploit_publico, dados_sensiveis,
+                     escalonamento_privilegio, ambiente_producao,
+                     categoria, prioridade, explicacao, origem, ativo,
+                     cvss_score, epss_score, cve_id, no_kev,
+                     sla_prazo_dias, sla_prioridade,
+                     usuario_id, origem_scan, confianca_ia)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            ''', (
+                achado["nome"],
+                achado["impacto"],
+                achado["frequencia"],
+                achado["gravidade"],
+                score,
+                "Aberta",
+                data_atual,
+                int(achado["exposta_internet"]),
+                int(achado["exploit_publico"]),
+                int(achado["dados_sensiveis"]),
+                int(achado["escalonamento_privilegio"]),
+                int(achado["ambiente_producao"]),
+                categoria,
+                prioridade,
+                explicacao_texto,
+                achado["origem"],
+                achado["ativo"],
+                achado["cvss_score"],
+                achado["epss_score"],
+                achado["cve_id"],
+                int(achado["no_kev"]),
+                sla_prazo_dias,
+                sla_prioridade,
+                uid,
+                scan_id,
+                achado.get("confianca_ia", 0.0),
+            ))
+            vuln_id = cursor.fetchone()["id"]
+            conn.commit()
+
+            registrar_historico(
+                vuln_id,
+                f"Detectada via SCA (scan #{scan_id}) — {achado.get('_osv_id', '')}",
+                "Scanner Automatizado"
+            )
+            ids_inseridos.append(vuln_id)
+
+            achados_resumo.append({
+                "vuln_id": vuln_id,
+                "pacote": achado["ativo"],
+                "cve_id": achado["cve_id"],
+                "cvss_score": achado["cvss_score"],
+                "sla_prioridade": sla_prioridade,
+                "versao_corrigida": achado.get("_versao_corrigida", ""),
+                "gravidade": achado.get("_gravidade_texto", ""),
+            })
+
+    except Exception:
+        app.logger.exception("Falha ao consolidar achados do SCA no banco")
+        # Falha no meio do loop: faz rollback, marca scan como erro e fecha conn.
+        conn.rollback()
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": "Falha interna ao consolidar os achados.",
+            "parcialmente_inseridos": len(ids_inseridos),
+        }), 500
+
+    # Finaliza o scan
+    data_fim = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE scans SET status = 'concluido', total_achados = ?, data_fim = ? WHERE id = ?",
+        (len(ids_inseridos), data_fim, scan_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "scan_id": scan_id,
+        "status": "concluido",
+        "nome_arquivo": nome_arquivo,
+        "total_pacotes_analisados": resultado_sca["total_pacotes"],
+        "total_vulnerabilidades_encontradas": len(ids_inseridos),
+        "achados_descartados": resultado_sca.get("achados_descartados", 0),
+        "triagem_aplicada": resultado_sca.get("triagem_aplicada", False),
+        "pacotes_sem_vulnerabilidades": resultado_sca["pacotes_sem_vuln"],
+        "vulnerabilidades": achados_resumo,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }), 201
+
+
+@app.route('/scanner/analisar-codigo', methods=['POST'])
+@jwt_required()
+@limiter.limit(os.environ.get("RATELIMIT_SCANNER", "10 per hour"), key_func=rate_limit_usuario)
+def scanner_analisar_codigo():
+    """Fase 2 — SAST: recebe um arquivo .py ou .zip via multipart/form-data,
+    executa o Bandit via subprocess (sem nunca executar o código enviado) e
+    insere os achados na tabela 'vulnerabilidades' existente.
+
+    Campos do form-data:
+        arquivo: arquivo .py único ou .zip com múltiplos .py (obrigatório)
+
+    Retorna JSON com resumo do scan e lista de vulnerabilidades encontradas.
+    """
+    # — Validação do upload —
+    if 'arquivo' not in request.files:
+        return jsonify({"erro": "Campo 'arquivo' não encontrado no form-data."}), 400
+
+    arquivo = request.files['arquivo']
+    if not arquivo.filename:
+        return jsonify({"erro": "Nenhum arquivo selecionado."}), 400
+
+    nome_arquivo = arquivo.filename.strip()
+    extensao = nome_arquivo.rsplit('.', 1)[-1].lower() if '.' in nome_arquivo else ''
+
+    if extensao not in ('py', 'zip'):
+        return jsonify({
+            "erro": "Apenas arquivos .py ou .zip são aceitos."
+        }), 400
+
+    # Lê bytes do upload — sem executar nada ainda
+    conteudo = arquivo.read()
+
+    conn = get_db_connection()
+    uid = usuario_id_atual(conn)
+    data_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Cria registro do scan (status inicial: em_progresso)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO scans (usuario_id, nome_arquivo, status, data_inicio) "
+        "VALUES (?, ?, 'em_progresso', ?) RETURNING id",
+        (uid, nome_arquivo, data_inicio)
+    )
+    scan_id = cursor.fetchone()["id"]
+    conn.commit()
+
+    # — Estágio 2: Varredura SAST via Bandit —
+    if extensao == 'py':
+        resultado_sast = scanner.executar_sast(conteudo, nome_arquivo)
+    else:
+        resultado_sast = scanner.executar_sast_zip(conteudo)
+
+    # Se houve erro na varredura, encerra o scan com status de erro
+    if resultado_sast["erro"]:
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": resultado_sast["erro"],
+            "total_arquivos_analisados": resultado_sast.get("total_arquivos", 0),
+        }), 502
+
+    # — Estágio 3: (Multi-LLM já aplicado dentro de scanner.executar_sast/_zip) —
+
+    # — Estágio 4: Consolidação na tabela vulnerabilidades —
+    ids_inseridos = []
+    achados_resumo = []
+
+    try:
+        for achado in resultado_sast["achados"]:
+            # Categoria detectada pela IA local
+            categoria = ia.detectar_categoria(achado["nome"])
+
+            # Prioridade via motor v2 (tripartido) quando CVSS disponível
+            cvss = achado["cvss_score"]
+            if cvss > 0:
+                prioridade, nivel_sla, sla_prazo_dias, explicacao_fatores = \
+                    ia.calcular_prioridade_v2(
+                        cvss,
+                        achado["epss_score"],
+                        achado["no_kev"],
+                        {
+                            "exposta_internet":         achado["exposta_internet"],
+                            "exploit_publico":          achado["exploit_publico"],
+                            "dados_sensiveis":          achado["dados_sensiveis"],
+                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                            "ambiente_producao":        achado["ambiente_producao"],
+                        }
+                    )
+                sla_prioridade = nivel_sla
+            else:
+                score_base = round(
+                    (achado["impacto"] * 0.4) +
+                    (achado["frequencia"] * 0.3) +
+                    (achado["gravidade"] * 0.3), 2
+                )
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
+                sla_prioridade, sla_prazo_dias = "P3", 90
+
+            score = round(
+                (achado["impacto"] * 0.4) +
+                (achado["frequencia"] * 0.3) +
+                (achado["gravidade"] * 0.3), 2
+            )
+
+            # Enriquece a explicação com metadados do Bandit (CWE, linha, confiança)
+            descricao_bandit = achado.get("_descricao", "")
+            cwe_id           = achado.get("_cwe_id", "")
+            confianca_bandit = achado.get("_confianca", "")
+            linha_codigo     = achado.get("_linha", "")
+
+            explicacao_extra = []
+            if descricao_bandit:
+                explicacao_extra.append(descricao_bandit)
+            if cwe_id:
+                explicacao_extra.append(f"CWE-{cwe_id}")
+            if confianca_bandit:
+                explicacao_extra.append(f"Confiança Bandit: {confianca_bandit}")
+            if linha_codigo:
+                explicacao_extra.append(f"Linha: {linha_codigo}")
+
+            explicacao_texto = " | ".join(list(explicacao_fatores) + explicacao_extra)
+            data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO vulnerabilidades
+                    (nome, impacto, frequencia, gravidade, score, status, data,
+                     exposta_internet, exploit_publico, dados_sensiveis,
+                     escalonamento_privilegio, ambiente_producao,
+                     categoria, prioridade, explicacao, origem, ativo,
+                     cvss_score, epss_score, cve_id, no_kev,
+                     sla_prazo_dias, sla_prioridade,
+                     usuario_id, origem_scan, confianca_ia)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            ''', (
+                achado["nome"],
+                achado["impacto"],
+                achado["frequencia"],
+                achado["gravidade"],
+                score,
+                "Aberta",
+                data_atual,
+                int(achado["exposta_internet"]),
+                int(achado["exploit_publico"]),
+                int(achado["dados_sensiveis"]),
+                int(achado["escalonamento_privilegio"]),
+                int(achado["ambiente_producao"]),
+                categoria,
+                prioridade,
+                explicacao_texto,
+                achado["origem"],
+                achado["ativo"],
+                achado["cvss_score"],
+                achado["epss_score"],
+                achado["cve_id"],
+                int(achado["no_kev"]),
+                sla_prazo_dias,
+                sla_prioridade,
+                uid,
+                scan_id,
+                achado.get("confianca_ia", 0.0),
+            ))
+            vuln_id = cursor.fetchone()["id"]
+            conn.commit()
+
+            registrar_historico(
+                vuln_id,
+                f"Detectada via SAST/Bandit (scan #{scan_id}) — {achado.get('_test_id', '')}",
+                "Scanner Automatizado"
+            )
+            ids_inseridos.append(vuln_id)
+
+            achados_resumo.append({
+                "vuln_id":          vuln_id,
+                "arquivo":          achado["ativo"],
+                "linha":            achado.get("_linha", ""),
+                "test_id":          achado.get("_test_id", ""),
+                "test_name":        achado.get("_test_name", ""),
+                "cwe":              f"CWE-{achado.get('_cwe_id', '')}",
+                "cvss_score":       achado["cvss_score"],
+                "sla_prioridade":   sla_prioridade,
+                "gravidade":        achado.get("_gravidade_texto", ""),
+                "confianca_bandit": achado.get("_confianca", ""),
+            })
+
+    except Exception:
+        app.logger.exception("Falha ao consolidar achados do SAST no banco")
+        # Falha no meio do loop: faz rollback, marca scan como erro e fecha conn.
+        conn.rollback()
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": "Falha interna ao consolidar os achados.",
+            "parcialmente_inseridos": len(ids_inseridos),
+        }), 500
+
+    # Finaliza o scan
+    data_fim = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE scans SET status = 'concluido', total_achados = ?, data_fim = ? WHERE id = ?",
+        (len(ids_inseridos), data_fim, scan_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "scan_id":                          scan_id,
+        "status":                           "concluido",
+        "nome_arquivo":                     nome_arquivo,
+        "total_arquivos_analisados":        resultado_sast.get("total_arquivos", 1),
+        "total_vulnerabilidades_encontradas": len(ids_inseridos),
+        "achados_descartados":              resultado_sast.get("achados_descartados", 0),
+        "triagem_aplicada":                 resultado_sast.get("triagem_aplicada", False),
+        "vulnerabilidades":                 achados_resumo,
+        "data_inicio":                      data_inicio,
+        "data_fim":                         data_fim,
+    }), 201
+
+
+@app.route('/scanner/analisar-url', methods=['POST'])
+@jwt_required()
+@limiter.limit(os.environ.get("RATELIMIT_DAST", "3 per hour"), key_func=rate_limit_usuario)
+def scanner_analisar_url():
+    """Fase 4 — DAST: recebe uma URL de sistema alvo via JSON, executa
+    Spider + Active Scan através da API HTTP do OWASP ZAP (com fallback
+    simulado caso o daemon do ZAP não esteja rodando localmente) e insere
+    os achados na tabela 'vulnerabilidades' existente.
+
+    Corpo JSON esperado:
+        { "url": "https://site-homologacao.com" }
+
+    Retorna JSON com resumo do scan e lista de vulnerabilidades encontradas.
+    """
+    # — Validação da entrada —
+    dados_requisicao = request.get_json(silent=True) or {}
+    url_alvo = (dados_requisicao.get('url') or '').strip()
+
+    if not url_alvo:
+        return jsonify({"erro": "Campo 'url' não encontrado no corpo da requisição."}), 400
+
+    conn = get_db_connection()
+    uid = usuario_id_atual(conn)
+    data_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Cria registro do scan (status inicial: em_progresso) — reaproveita a
+    # mesma tabela 'scans' das Fases 1/2, usando a URL no lugar do nome do arquivo.
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO scans (usuario_id, nome_arquivo, status, data_inicio) "
+        "VALUES (?, ?, 'em_progresso', ?) RETURNING id",
+        (uid, url_alvo, data_inicio)
+    )
+    scan_id = cursor.fetchone()["id"]
+    conn.commit()
+
+    # — Estágio 2: Varredura DAST via OWASP ZAP (Spider + Active Scan) —
+    resultado_dast = scanner.executar_dast(url_alvo)
+
+    # Se houve erro na varredura (URL inválida, alvo bloqueado por política de
+    # SSRF, ou falha de comunicação com o ZAP), encerra o scan com status de erro.
+    if resultado_dast["erro"]:
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+
+        # Erros de validação de entrada (URL ausente/malformada, host que não
+        # resolve, ou alvo bloqueado por apontar para rede interna) são erro
+        # do cliente (400). Falha ao comunicar com o ZAP é erro de dependência
+        # externa (502) — só essa segunda categoria não é responsabilidade
+        # de quem chamou a rota.
+        erro_msg = resultado_dast["erro"]
+        eh_erro_de_validacao = any(trecho in erro_msg for trecho in (
+            "URL inválida", "Informe a URL", "Alvo bloqueado",
+            "Não foi possível resolver", "Não foi possível identificar",
+            "URL malformada",
+        ))
+        status_http = 400 if eh_erro_de_validacao else 502
+
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": erro_msg,
+            "url_alvo": url_alvo,
+        }), status_http
+
+    # — Estágio 3: (Multi-LLM já aplicado dentro de scanner.executar_dast) —
+
+    # — Estágio 4: Consolidação na tabela vulnerabilidades —
+    ids_inseridos = []
+    achados_resumo = []
+
+    try:
+        for achado in resultado_dast["achados"]:
+            # Categoria detectada pela IA local
+            categoria = ia.detectar_categoria(achado["nome"])
+
+            # Prioridade via motor v2 (tripartido) quando CVSS disponível
+            cvss = achado["cvss_score"]
+            if cvss > 0:
+                prioridade, nivel_sla, sla_prazo_dias, explicacao_fatores = \
+                    ia.calcular_prioridade_v2(
+                        cvss,
+                        achado["epss_score"],
+                        achado["no_kev"],
+                        {
+                            "exposta_internet":         achado["exposta_internet"],
+                            "exploit_publico":          achado["exploit_publico"],
+                            "dados_sensiveis":          achado["dados_sensiveis"],
+                            "escalonamento_privilegio": achado["escalonamento_privilegio"],
+                            "ambiente_producao":        achado["ambiente_producao"],
+                        }
+                    )
+                sla_prioridade = nivel_sla
+            else:
+                score_base = round(
+                    (achado["impacto"] * 0.4) +
+                    (achado["frequencia"] * 0.3) +
+                    (achado["gravidade"] * 0.3), 2
+                )
+                prioridade, explicacao_fatores = ia.calcular_prioridade(score_base, {})
+                sla_prioridade, sla_prazo_dias = "P3", 90
+
+            score = round(
+                (achado["impacto"] * 0.4) +
+                (achado["frequencia"] * 0.3) +
+                (achado["gravidade"] * 0.3), 2
+            )
+
+            # Enriquece a explicação com metadados do ZAP (CWE, confiança, solução)
+            descricao_zap = achado.get("_descricao", "")
+            solucao_zap    = achado.get("_solucao", "")
+            cwe_id         = achado.get("_cwe_id", "")
+            confianca_zap  = achado.get("_confianca", "")
+
+            explicacao_extra = []
+            if descricao_zap:
+                explicacao_extra.append(descricao_zap)
+            if cwe_id:
+                explicacao_extra.append(f"CWE-{cwe_id}")
+            if confianca_zap:
+                explicacao_extra.append(f"Confiança ZAP: {confianca_zap}")
+            if solucao_zap:
+                explicacao_extra.append(f"Solução: {solucao_zap}")
+
+            explicacao_texto = " | ".join(list(explicacao_fatores) + explicacao_extra)
+            data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO vulnerabilidades
+                    (nome, impacto, frequencia, gravidade, score, status, data,
+                     exposta_internet, exploit_publico, dados_sensiveis,
+                     escalonamento_privilegio, ambiente_producao,
+                     categoria, prioridade, explicacao, origem, ativo,
+                     cvss_score, epss_score, cve_id, no_kev,
+                     sla_prazo_dias, sla_prioridade,
+                     usuario_id, origem_scan, confianca_ia)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            ''', (
+                achado["nome"],
+                achado["impacto"],
+                achado["frequencia"],
+                achado["gravidade"],
+                score,
+                "Aberta",
+                data_atual,
+                int(achado["exposta_internet"]),
+                int(achado["exploit_publico"]),
+                int(achado["dados_sensiveis"]),
+                int(achado["escalonamento_privilegio"]),
+                int(achado["ambiente_producao"]),
+                categoria,
+                prioridade,
+                explicacao_texto,
+                achado["origem"],
+                achado["ativo"],
+                achado["cvss_score"],
+                achado["epss_score"],
+                achado["cve_id"],
+                int(achado["no_kev"]),
+                sla_prazo_dias,
+                sla_prioridade,
+                uid,
+                scan_id,
+                achado.get("confianca_ia", 0.0),
+            ))
+            vuln_id = cursor.fetchone()["id"]
+            conn.commit()
+
+            registrar_historico(
+                vuln_id,
+                f"Detectada via DAST/OWASP ZAP (scan #{scan_id}) — Severidade {achado.get('_gravidade_texto', '')}",
+                "Scanner Automatizado"
+            )
+            ids_inseridos.append(vuln_id)
+
+            achados_resumo.append({
+                "vuln_id":         vuln_id,
+                "url":             achado["ativo"],
+                "cwe":             f"CWE-{achado.get('_cwe_id', '')}" if achado.get('_cwe_id') else "",
+                "cvss_score":      achado["cvss_score"],
+                "sla_prioridade":  sla_prioridade,
+                "gravidade":       achado.get("_gravidade_texto", ""),
+                "confianca_zap":   achado.get("_confianca", ""),
+            })
+
+    except Exception:
+        app.logger.exception("Falha ao consolidar achados do DAST no banco")
+        # Falha no meio do loop: faz rollback, marca scan como erro e fecha conn.
+        conn.rollback()
+        conn.execute(
+            "UPDATE scans SET status = 'erro', data_fim = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), scan_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "status": "erro",
+            "erro": "Falha interna ao consolidar os achados.",
+            "parcialmente_inseridos": len(ids_inseridos),
+        }), 500
+
+    # Finaliza o scan
+    data_fim = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE scans SET status = 'concluido', total_achados = ?, data_fim = ? WHERE id = ?",
+        (len(ids_inseridos), data_fim, scan_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "scan_id":                            scan_id,
+        "status":                             "concluido",
+        "url_alvo":                           url_alvo,
+        "total_alertas_zap":                  resultado_dast.get("total_alertas", 0),
+        "total_vulnerabilidades_encontradas": len(ids_inseridos),
+        "achados_descartados":                resultado_dast.get("achados_descartados", 0),
+        "triagem_aplicada":                   resultado_dast.get("triagem_aplicada", False),
+        "zap_mock_usado":                     resultado_dast.get("mock_usado", False),
+        "vulnerabilidades":                   achados_resumo,
+        "data_inicio":                        data_inicio,
+        "data_fim":                           data_fim,
+    }), 201
+
+
+
+# ─────────────────────────────────────────────
 # INICIALIZAÇÃO
 # ─────────────────────────────────────────────
 
 if __name__ == '__main__':
     print("Iniciando a API SecureScope com IA...")
     # O app.run deve ser a ÚLTIMA coisa do ficheiro
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    debug_ativo = os.environ.get("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host=host, port=port, debug=debug_ativo and not IS_PRODUCTION, use_reloader=False)

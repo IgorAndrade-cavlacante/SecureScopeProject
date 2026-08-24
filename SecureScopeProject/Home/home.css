@@ -13,7 +13,7 @@
   --yellow-hover: #ffc300;
   --text-main: #f5f5f5;
   --text-secondary: #a1a1b5;
-  --bg-home: url("/SecureScopeProject/images/bghome.webp");
+  --bg-home: url("/images/bghome.webp");
 }
 
 body {
@@ -22,7 +22,6 @@ body {
   background: var(--bg-main) var(--bg-home) center / cover no-repeat;
   color: var(--text-main);
   font-family: "Inter", sans-serif;
-  overflow: hidden;
 }
 
 .header {
@@ -35,23 +34,16 @@ body {
 
 .logo img {
   display: block;
-  position: relative;
-  left: -110px;
-  top: -20px;
   width: 150px;
 }
 
 .search {
   display: flex;
-  position: relative;
-  right: -40px;
-  top: -15px;
   gap: 10px;
   padding: 9px 16px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  z-index:999;
 }
 
 .search-input {
@@ -75,14 +67,11 @@ body {
 
 .navbar {
   display: flex;
-  position: relative;
-  top: -130px;
-  left: 42px;
   align-items: center;
   justify-content: center;
   width: min(84%, 1600px);
   gap: clamp(20px, 4vw, 56px);
-  margin: 0 auto;
+  margin: 12px auto 0;
   padding: 16px 24px;
   backdrop-filter: blur(10px);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
@@ -94,13 +83,13 @@ body {
   position: relative;
   color: var(--text-secondary);
   font-size: 1.2rem;
-  left: -100px;
   font-weight: 800;
   text-decoration: none;
   transition: color 0.3s ease;
 }
 
-.navbar a:hover {
+.navbar a:hover,
+.navbar a.active {
   color: var(--purple-light);
 }
 
@@ -115,7 +104,8 @@ body {
   transition: width 0.3s ease;
 }
 
-.navbar a:hover::after {
+.navbar a:hover::after,
+.navbar a.active::after {
   width: 100%;
 }
 
@@ -129,9 +119,6 @@ body {
 }
 
 .hero-text h1 {
-  position: relative;
-  top: -240px;
-  left: -50px;
   font-family: "Orbitron", sans-serif;
   font-size: clamp(2.9rem, 6vw, 5rem);
   line-height: 1;
@@ -150,9 +137,6 @@ body {
   font-family: "VT323", monospace;
   font-size: 2.0rem;
   line-height: 1.5;
-  position: relative;
-  top: -270px;
-  right: -50px;
 }
 
 .hero-buttons {
@@ -217,5 +201,27 @@ body {
 
   .hero {
     padding: 72px 8% 48px;
+  }
+}
+/* Correção para telas móveis estreitas */
+@media (max-width: 680px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .logo img {
+    width: 110px;
+  }
+
+  .search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
   }
 }

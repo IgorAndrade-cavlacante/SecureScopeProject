@@ -1,0 +1,4 @@
+requests==2.20.0
+flask==0.12.2
+django==2.2.0
+pyyaml==5.3.1

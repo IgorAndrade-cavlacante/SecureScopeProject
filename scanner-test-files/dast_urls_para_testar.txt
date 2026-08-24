@@ -1,0 +1,8 @@
+URL publica autorizada para teste DAST:
+http://testphp.vulnweb.com
+
+Teste de bloqueio SSRF que deve falhar com erro 400:
+http://127.0.0.1:5000/painel
+
+Observacao:
+DAST recebe uma URL no campo da tela, nao um upload de arquivo.

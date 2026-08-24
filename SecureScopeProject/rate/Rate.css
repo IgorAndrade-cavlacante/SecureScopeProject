@@ -22,31 +22,40 @@
      --yellow-hover: #ffc300;
     --text-main: #f5f5f5;
     --text-secondary: #a1a1b5;
-    --bg-rate: url("/SecureScopeProject/images/bgrate.webp");
+    --bg-rate: url("/images/bgrate.webp");
     --shadow: 0px 16px 40px rgba(143, 168, 193, 0.14);
 }
 
 body {
+    min-height: 100svh;
     background: var(--bg-main);
     background-image: var(--bg-rate);
     background-repeat: no-repeat;
     background-size: cover;
     background-position: center;
-    height: 100svh;
+    color: var(--text-main);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 24px 8% 12px;
+}
+
+.rate-main {
     display: flex;
     justify-content: center;
-    align-items: center;
+    padding: 48px 8% 64px;
 }
 
 .card {
     background: var(--black-gradient);
     max-width: 412px;
-    top: 30px ;
+    width: 100%;
     padding: 32px;
     border-radius: 30px;
-    position: relative;
-    right: -225px ;
-
 }
 
 .estrela {
@@ -132,11 +141,7 @@ body {
 
 .logo img {
   width: 130px;
-  left: -32px;
   display: block;
-  position: relative;
-  top: -365px;
-  z-index: 999;
 }
 
 /* =========================
@@ -146,17 +151,10 @@ body {
 .search {
   display: flex;
   gap: 10px;
-  position: relative;
-  top: -340px;
-  right: -1070px;
   background: rgba(255, 255, 255, 0.05);
-
   border: 1px solid rgba(255, 255, 255, 0.08);
-
   padding: 10px 16px;
-
   border-radius: 14px;
-  z-index: 999;
 }
 
 .search-input {
@@ -185,36 +183,31 @@ body {
 ========================= */
 
 .navbar {
-  width: 82%;
-  position: relative;
-  top: -275px;
-  right: 58px;
+  width: min(84%, 1600px);
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 60px;
+  gap: clamp(20px, 4vw, 60px);
+  margin: 0 auto;
   backdrop-filter: blur(10px);
   border-radius: 40px;
-  margin-left: -480px;
-
   padding: 14px 0;
-
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .navbar a {
   text-decoration: none;
-
   color: var(--text-secondary);
   position: relative;
-  right: 105px;
-  top: 5px;
   font-size: 1.3rem;
   font-weight: 400;
+  transition: 0.3s ease;
+}
 
-  transition: 0.3s ease;;
-  position: relative;
+.navbar a:hover,
+.navbar a.active {
+  color: var(--purple-light);
 }
 
 .navbar a::after {
@@ -233,6 +226,82 @@ body {
   transition: 0.3s ease;
 }
 
-.navbar a:hover::after {
+.navbar a:hover::after,
+.navbar a.active::after {
   width: 100%;
+}
+
+.navbar a.rate {
+  color: var(--orange);
+}
+
+@media (max-width: 680px) {
+  .header {
+    padding: 20px 6%;
+  }
+
+  .search-input {
+    width: 140px;
+  }
+
+  .navbar {
+    flex-wrap: wrap;
+    gap: 14px 22px;
+  }
+
+  .navbar a {
+    font-size: 1rem;
+  }
+
+  .rate-main {
+    padding: 32px 6% 48px;
+  }
+
+  .card {
+    padding: 24px;
+  }
+}
+/* Estado persistente e acessível da nota selecionada */
+.botoes button.selected {
+  color: var(--purple-main);
+  background-color: var(--purple-light);
+}
+
+.botoes button:focus-visible {
+  outline: 3px solid var(--white);
+  outline-offset: 2px;
+}
+
+/* Correção para telas móveis estreitas */
+@media (max-width: 680px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .logo img {
+    width: 110px;
+  }
+
+  .search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  .botoes {
+    gap: 8px;
+  }
+
+  .botoes button {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 40px;
+    height: 48px;
+  }
 }

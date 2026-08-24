@@ -5,64 +5,64 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>SecureScope</title>
+  <title>SecureScope — Segurança Digital Inteligente</title>
+  <meta name="description" content="SecureScope: plataforma de governança de risco com IA para proteção proativa do seu ambiente digital.">
+
+  <!-- FAVICON -->
+  <link rel="icon" href="/images/favicon-32x32.png">
 
   <!-- CSS -->
   <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="/site-header.css">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700;800&family=VT323&display=swap"
     rel="stylesheet">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Intel+One+Mono:ital,wght@0,300..700;1,300..700&family=Love+Light&family=Roboto:ital,wght@0,100..900;1,100..900&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+  <script src="/site-search.js" defer></script>
 </head>
 
 <body>
 
   <!-- HEADER -->
-  <header class="header">
+  <header class="header site-header">
 
     <!-- LOGO -->
-    <div class="logo">
-      <img src="/SecureScopeProject/images/logotipo.png" alt="Logo SecureScope">
-    </div>
+    <a class="logo" href="/home" aria-label="Página inicial do SecureScope">
+      <img src="/images/logotipo.png" alt="Logo SecureScope">
+    </a>
+
+    <!-- NAVBAR -->
+    <nav class="navbar" aria-label="Navegação principal">
+      <a href="/home" class="active" aria-current="page">Home</a>
+      <a href="/painel">Services</a>
+      <a href="#">Solutions</a>
+      <a href="/about">About Us</a>
+      <a href="/rate/Rate.html" class="rate">Rate us</a>
+    </nav>
 
     <!-- SEARCH -->
-    <div class="search">
+    <div class="search" role="search">
 
       <input
         type="text"
         class="search-input"
+        aria-label="Pesquisar nesta página"
         placeholder="Pesquisar...">
 
-      <a href="#" class="search-btn">
+      <button type="button" class="search-btn" aria-label="Pesquisar nesta página">
         <img
-          src="/SecureScopeProject/images/lupa.png"
+          src="/images/lupa.png"
           alt="Pesquisar"
           width="20"
           height="20">
-      </a>
+      </button>
 
     </div>
 
   </header>
-
-  <!-- NAVBAR -->
-  <nav class="navbar">
-
-    <a href="/SecureScopeProject/home/Home.html">Home</a>
-    <a href="/SecureScopeProject/securescope/index.html">Services</a>
-    <a href="#">Solutions</a>
-    <a href="/SecureScopeProject/about/About.html">About Us</a>
-    <a href="/SecureScopeProject/rate/Rate.html" class="rate">Rate us</a>
-    
-
-  </nav>
 
   <!-- MAIN -->
   <main>
@@ -71,7 +71,6 @@
     <section class="hero">
 
       <div class="hero-text">
-
 
         <h1>
           Segurança Digital
