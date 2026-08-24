@@ -156,6 +156,10 @@ limiter = Limiter(
     app=app,
     storage_uri=_rate_storage,
     headers_enabled=True,
+    # Mantem as rotas protegidas quando o Redis fica temporariamente
+    # indisponivel. O fallback herda os limites declarados nas rotas e evita
+    # que uma falha do storage transforme login/cadastro em HTTP 500.
+    in_memory_fallback_enabled=True,
 )
 
 
@@ -201,6 +205,13 @@ def aplicar_cabecalhos_seguranca(response):
 @app.errorhandler(429)
 def limite_excedido(_erro):
     return jsonify({"erro": "Muitas requisicoes. Aguarde antes de tentar novamente."}), 429
+
+
+@app.errorhandler(500)
+def erro_interno(_erro):
+    return jsonify({
+        "erro": "Erro interno do servidor. Tente novamente em instantes."
+    }), 500
 
 
 @jwt.unauthorized_loader

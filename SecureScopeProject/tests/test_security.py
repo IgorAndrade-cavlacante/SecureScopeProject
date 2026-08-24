@@ -238,6 +238,34 @@ class SecurityControlsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RATELIMIT_STORAGE_URI", result.stderr)
 
+    def test_login_uses_memory_fallback_when_redis_is_unavailable(self):
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "testing",
+            "USE_SQLITE": "1",
+            "SQLITE_DATABASE_PATH": str(Path(TEMP_DIR.name) / "redis-fallback-test.db"),
+            "JWT_SECRET_KEY": "test-only-secret-with-at-least-thirty-two-characters",
+            # Porta local reservada/fechada: a conexao falha imediatamente e
+            # exercita o fallback sem depender de um Redis externo.
+            "RATELIMIT_STORAGE_URI": "redis://127.0.0.1:1/0",
+        })
+        codigo = (
+            "import app; "
+            "cliente = app.app.test_client(); "
+            "resposta = cliente.post('/auth/login', json={}); "
+            "assert resposta.status_code == 400, resposta.get_data(as_text=True)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", codigo],
+            cwd=APP_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

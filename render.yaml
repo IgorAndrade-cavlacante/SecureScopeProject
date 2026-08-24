@@ -13,7 +13,7 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://securescopeproject.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: RATELIMIT_STORAGE_URI
