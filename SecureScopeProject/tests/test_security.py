@@ -144,6 +144,11 @@ class SecurityControlsTest(unittest.TestCase):
         self.assertTrue(dados["detalhes_completos"])
         self.assertEqual(dados["detalhes_scanner"]["linha"], 4)
         self.assertIn("hashlib.md5", dados["detalhes_scanner"]["codigo"])
+        self.assertIn(
+            "A análise estática identificou",
+            dados["detalhes_scanner"]["descricao"],
+        )
+        self.assertIn("weak MD5", dados["detalhes_scanner"]["descricao_original"])
         self.assertGreaterEqual(len(dados["guia_remediacao"]), 3)
 
     @patch("app.scanner.executar_sca")
@@ -172,7 +177,7 @@ class SecurityControlsTest(unittest.TestCase):
                 "cve_id": "CVE-2026-1234",
                 "_epss_disponivel": False,
                 "_titulo": "Falha crítica",
-                "_descricao": "Descrição OSV completa.",
+                "_descricao": "Remote attackers can exploit this vulnerable dependency.",
                 "_versao_afetada": "1.0.0",
                 "_versao_corrigida": "2.0.0",
                 "_osv_id": "GHSA-demo",
@@ -196,7 +201,12 @@ class SecurityControlsTest(unittest.TestCase):
         analise = self.client.get(f"/vulnerabilidades/{item['vuln_id']}/analise").get_json()
         detalhes = analise["detalhes_scanner"]
         self.assertEqual(detalhes["versao_corrigida"], "2.0.0")
-        self.assertEqual(detalhes["descricao"], "Descrição OSV completa.")
+        self.assertIn("A análise de componentes identificou", detalhes["descricao"])
+        self.assertIn("demo", detalhes["descricao"])
+        self.assertEqual(
+            detalhes["descricao_original"],
+            "Remote attackers can exploit this vulnerable dependency.",
+        )
 
     def test_production_rejects_missing_jwt_secret(self):
         env = os.environ.copy()

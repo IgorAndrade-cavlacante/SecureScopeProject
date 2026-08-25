@@ -1103,6 +1103,11 @@ async function abrirAnaliseIA(id) {
             complementarLista.appendChild(li);
         });
 
+        const descricaoOriginalBloco = document.getElementById('analise-descricao-original-bloco');
+        const descricaoOriginal = detalhes.descricao_original || detalhes.risco_original || '';
+        descricaoOriginalBloco.hidden = !descricaoOriginal;
+        document.getElementById('analise-descricao-original').textContent = descricaoOriginal;
+
         const referencias = [...(detalhes.referencias || [])];
         if (detalhes.cwe_link) referencias.unshift(detalhes.cwe_link);
         const referenciasValidas = [...new Set(referencias)].filter(url => /^https:\/\//i.test(url));

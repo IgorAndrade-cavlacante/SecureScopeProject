@@ -234,6 +234,101 @@ def get_db_connection():
     return db.get_db_connection()
 
 
+def _texto_aparenta_portugues(texto):
+    """Heurística simples para não substituir análises curadas em português."""
+    texto = f" {str(texto or '').lower()} "
+    marcadores = (
+        " não ", " uma ", " pode ", " permite ", " código ", " dados ",
+        " risco ", " vulnerabilidade ", " aplicação ", " segurança ",
+        " ataque ", " usuário ", " versão ", " dependência ",
+    )
+    return any(marcador in texto for marcador in marcadores)
+
+
+def _resumo_scanner_em_portugues(detalhes):
+    """Cria um resumo em português sem depender do idioma da ferramenta."""
+    tipo = str(detalhes.get("tipo") or "").upper()
+
+    if tipo == "SAST":
+        arquivo = detalhes.get("arquivo") or "o arquivo analisado"
+        linha = detalhes.get("linha")
+        regra = detalhes.get("test_id")
+        cwe = detalhes.get("cwe")
+        local = f' no arquivo “{arquivo}”'
+        if linha:
+            local += f", na linha {linha}"
+        complementos = []
+        if regra:
+            complementos.append(f"regra {regra} do Bandit")
+        if cwe:
+            complementos.append(str(cwe))
+        referencia = f", associado a {' e '.join(complementos)}" if complementos else ""
+        return (
+            "A análise estática identificou um padrão de código potencialmente "
+            f"inseguro{local}{referencia}."
+        )
+
+    if tipo == "SCA":
+        pacote = detalhes.get("pacote") or "a dependência analisada"
+        versao = detalhes.get("versao_afetada")
+        identificador = detalhes.get("osv_id")
+        corrigida = detalhes.get("versao_corrigida")
+        resumo = f'A análise de componentes identificou uma vulnerabilidade conhecida no pacote “{pacote}”'
+        if versao:
+            resumo += f", versão {versao}"
+        if identificador:
+            resumo += f", registrada como {identificador}"
+        resumo += "."
+        if corrigida:
+            resumo += f" A primeira versão corrigida informada pela fonte é {corrigida}."
+        return resumo
+
+    if tipo == "DAST":
+        url = detalhes.get("url") or "a URL analisada"
+        modo = str(detalhes.get("modo_scan") or "").lower()
+        metodo = (
+            "A verificação passiva da resposta HTTP"
+            if modo == "passivo_http"
+            else "A análise dinâmica da aplicação"
+        )
+        return (
+            f"{metodo} identificou uma configuração ou comportamento que requer "
+            f"validação de segurança na URL “{url}”."
+        )
+
+    return str(detalhes.get("descricao") or "")
+
+
+def normalizar_detalhes_scanner(detalhes):
+    """Traduz a camada explicativa e preserva a saída técnica de origem."""
+    if not isinstance(detalhes, dict):
+        return {}
+
+    detalhes = dict(detalhes)
+    descricao_original = str(
+        detalhes.get("descricao_original") or detalhes.get("descricao") or ""
+    ).strip()
+    resumo = _resumo_scanner_em_portugues(detalhes)
+    if resumo:
+        detalhes["descricao"] = resumo
+
+    # A descrição inglesa continua disponível, mas fora do resumo principal.
+    if descricao_original and not _texto_aparenta_portugues(descricao_original):
+        detalhes["descricao_original"] = descricao_original
+    else:
+        detalhes.pop("descricao_original", None)
+
+    risco = str(detalhes.get("risco") or "").strip()
+    if risco and not _texto_aparenta_portugues(risco):
+        detalhes["risco_original"] = risco
+        detalhes["risco"] = (
+            "O impacto deve ser confirmado considerando como esse componente é "
+            "utilizado, os dados processados e a exposição do ativo."
+        )
+
+    return detalhes
+
+
 def serializar_detalhes_scanner(achado, tipo):
     """Preserva metadados técnicos sem poluir a tabela principal."""
     detalhes = {
@@ -273,7 +368,7 @@ def serializar_detalhes_scanner(achado, tipo):
             "confianca_ferramenta": achado.get("_confianca", ""),
         })
 
-    return json.dumps(detalhes, ensure_ascii=False)
+    return json.dumps(normalizar_detalhes_scanner(detalhes), ensure_ascii=False)
 
 
 def desserializar_detalhes_scanner(valor):
@@ -281,7 +376,7 @@ def desserializar_detalhes_scanner(valor):
         return {}
     try:
         detalhes = json.loads(valor)
-        return detalhes if isinstance(detalhes, dict) else {}
+        return normalizar_detalhes_scanner(detalhes)
     except (TypeError, json.JSONDecodeError):
         return {}
 
@@ -1014,6 +1109,8 @@ def analise_vulnerabilidade(id):
                 "test_id": match.group(4),
                 "cwe": vuln.get("cve_id") or "",
             }
+
+    detalhes = normalizar_detalhes_scanner(detalhes)
 
     fatores = {
         "exposta_internet": bool(vuln.get("exposta_internet")),
