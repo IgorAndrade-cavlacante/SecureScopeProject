@@ -28,6 +28,9 @@ SecureScope_Plano_Scanner_Multi_LLM.docx
 # Apresentacoes mantidas apenas localmente
 /docs/apresentacao/
 
+# Documento mantido apenas localmente
+/docs/FUNCIONALIDADES_PROPOSTAS.md
+
 # Editor e sistema operacional
 .vscode/
 .idea/

@@ -5,7 +5,6 @@ Ferramenta web para registrar, analisar e priorizar vulnerabilidades de seguran�
 ## Documentação
 
 - [Passo a passo de instalação e uso](docs/GUIA_DE_USO.md)
-- [Funcionalidades implementadas](docs/FUNCIONALIDADES_PROPOSTAS.md)
 - [Integrantes do grupo — preencher aqui](INTEGRANTES.md)
 - [Licença BSD de 3 cláusulas](LICENSE)
 
