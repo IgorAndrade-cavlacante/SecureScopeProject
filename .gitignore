@@ -9,6 +9,8 @@
 
 # Dados e artefatos locais
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 *.log
@@ -22,6 +24,9 @@ htmlcov/
 .agent/
 SECURITY_TODO.md
 SecureScope_Plano_Scanner_Multi_LLM.docx
+
+# Apresentacoes mantidas apenas localmente
+/docs/apresentacao/
 
 # Editor e sistema operacional
 .vscode/

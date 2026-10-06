@@ -13,6 +13,9 @@ APP_DIR = TESTS_DIR.parent / "securescope"
 TEMP_DIR = tempfile.TemporaryDirectory(dir=TESTS_DIR)
 
 os.environ["APP_ENV"] = "testing"
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GROQ_API_KEY"] = ""
+os.environ["SCAN_WORKER_EMBUTIDO"] = "0"
 os.environ["USE_SQLITE"] = "1"
 os.environ["SQLITE_DATABASE_PATH"] = str(Path(TEMP_DIR.name) / "security-test.db")
 os.environ["JWT_SECRET_KEY"] = "test-only-secret-with-at-least-thirty-two-characters"

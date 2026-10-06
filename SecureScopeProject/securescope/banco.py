@@ -2,7 +2,7 @@
 import db
 from datetime import datetime
 
-VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)")  # corrigido
+VALORES_STATUS = ("Aberta", "Validada", "Isolada (Circuit Breaker)", "Corrigida")  # corrigido
 
 def conectar_banco(nome_banco=None):
     """Mantido por compatibilidade com o bloco __main__ deste arquivo.

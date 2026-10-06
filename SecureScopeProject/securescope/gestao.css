@@ -1,0 +1,27 @@
+.gestao { margin: 24px 0; padding: 24px; border: 1px solid var(--glass-border); border-radius: 16px; background: var(--surface-main); color: var(--text-main); }
+.gestao h2, .gestao h3 { margin-bottom: 12px; }
+.gestao p, .gestao small { color: var(--text-secondary); line-height: 1.6; }
+.gestao-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
+.gestao label { display: flex; flex: 1 1 160px; flex-direction: column; gap: 7px; font-size: 13px; }
+.gestao input, .gestao select, .gestao textarea { width: 100%; min-height: 42px; padding: 10px; background: var(--surface-input); color: var(--text-main); border: 1px solid #69697f; border-radius: 7px; font: inherit; }
+.gestao textarea { min-height: 90px; resize: vertical; }
+.gestao button, .btn-gestao { padding: 10px 14px; border: 1px solid #8d69cc; border-radius: 8px; color: #fff; background: #512790; font: inherit; cursor: pointer; }
+.gestao button:hover, .btn-gestao:hover { background: #6a39ac; }
+.gestao button:disabled { opacity: .5; cursor: not-allowed; }
+.gestao :focus-visible { outline: 3px solid #bfa3ff; outline-offset: 3px; }
+.gestao summary { cursor: pointer; font-size: 19px; font-weight: 650; padding: 8px 0; }
+.gestao-lista { display: grid; gap: 12px; margin-top: 14px; }
+.gestao-item { padding: 15px; border: 1px solid var(--glass-border); border-radius: 10px; overflow-wrap: anywhere; }
+.gestao-item p { margin: 7px 0; white-space: pre-wrap; }
+.gestao-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.gestao-alerta { border-left: 3px solid #ffca70; }
+.gestao-modal { position: fixed; inset: 0; width: min(900px, 94vw); max-height: 88vh; margin: auto; padding: 24px; overflow: auto; box-shadow: 0 20px 100px #0008; }
+.gestao-modal::backdrop { background: #000b; }
+.gestao-modal .fechar { float: right; }
+.gestao-modal fieldset { border: 1px solid var(--glass-border); border-radius: 10px; margin: 18px 0; padding: 15px; }
+.gestao-modal legend { padding: 0 8px; }
+.gestao-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.gestao [hidden], .gestao-modal[hidden] { display: none !important; }
+.gestao-status { display: block; margin: 6px 0; color: var(--text-secondary); font-size: 12px; }
+.gestao-erro { color: #ffb3b3 !important; }
+@media (max-width: 600px) { .gestao { padding: 16px; } .gestao-form > * { flex-basis: 100%; } }

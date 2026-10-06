@@ -56,11 +56,11 @@ document.addEventListener('click', (e) => {
     if (wrapper && !wrapper.contains(e.target)) fecharMenuAuth();
 });
 
-// Configurações — sem funcionalidade por enquanto (fora do escopo deste
-// integrante do time); só fecha o menu.
+// Configurações de colaboração no painel.
 function abrirConfiguracoes() {
     fecharMenuAuth();
-    mostrarToast('Configurações ainda não implementadas.', 'info');
+    document.getElementById('equipes-painel').open = true;
+    document.getElementById('equipes-painel').scrollIntoView({ behavior: 'smooth' });
 }
 
 function abrirModalAuth() {
@@ -179,6 +179,7 @@ async function fazerLogout() {
 // usuário). Chamado no window.onload (se já houver token) e logo após um
 // login bem-sucedido.
 function carregarDadosProtegidos() {
+    gestaoAtualizar();
     carregarVulnerabilidades();
     carregarInsightsIA();
     carregarSLAWidget();
@@ -188,6 +189,7 @@ function carregarDadosProtegidos() {
 // M3 — Estado exibido quando ninguém está logado: tabela vazia com CTA de
 // login, em vez de deixar os painéis girando em "carregando" pra sempre.
 function mostrarEstadoDeslogado() {
+    gestaoResetar();
     const tbody = document.getElementById('tabelaCorpo');
     if (tbody) {
         tbody.innerHTML = `
@@ -324,17 +326,25 @@ function mostrarToast(msg, tipo = 'info') {
     }, 3000);
 }
 
-async function carregarVulnerabilidades(endpoint = '/vulnerabilidades') {
-
+async function carregarVulnerabilidades(endpoint = '/gestao/vulnerabilidades') {
     endpointAtual = endpoint;
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-        headers: getAuthHeaders()  // M3 — rota agora exige token (isolamento por usuário)
-    });
-
-    const dados = await response.json();
-
-    renderizarTabela(dados);
+    const requestId = ++gestaoEstado.request;
+    try {
+        const dados = await apiG(`/gestao/vulnerabilidades?${filtrosG()}`);
+        if (requestId !== gestaoEstado.request) return;
+        renderizarTabela(dados);
+        document.getElementById('gestao-contagem').textContent = `${dados.length} achado(s) encontrado(s).`;
+        const origem = document.getElementById('filtro-origem');
+        const values = new Set([...origem.options].map(o => o.value));
+        dados.forEach(v => { if (v.origem && !values.has(v.origem)) {
+            const option = document.createElement('option'); option.value = v.origem; option.textContent = v.origem;
+            origem.append(option); values.add(v.origem);
+        }});
+    } catch (error) {
+        if (requestId !== gestaoEstado.request) return;
+        document.getElementById('gestao-contagem').textContent = error.message;
+        document.getElementById('tabelaCorpo').replaceChildren();
+    }
 }
 
 function renderizarTabela(dados) {
@@ -382,8 +392,9 @@ function renderizarTabela(dados) {
                     <span class="badge-dot"></span>${classificacao.rotulo} · ${prioridade.toFixed(1)}
                 </span>
             </td>
-            <td>${escaparHtml(vuln.status)}</td>
+            <td>${escaparHtml(vuln.status)}<small class="gestao-status">${escaparHtml(vuln.responsavel_nome || 'Sem responsável')}</small>${vuln.equipe_nome ? `<small class="gestao-status">${escaparHtml(vuln.equipe_nome)}</small>` : ''}</td>
             <td>
+                <button class="btn-gestao" onclick="abrirGestao(${id})">Gerenciar</button>
                 <button class="btn-validar"
                     onclick="validarVuln(${id})">
                     Validar
@@ -603,39 +614,18 @@ document.getElementById('btn-editar-ia').addEventListener('click', () => {
 });
 
 async function validarVuln(id) {
-
-    await fetch(`${API_URL}/vulnerabilidades/${id}/validar`, {
-        method: 'PUT',
-        headers: getAuthHeaders()
+    await tentarG(async () => {
+        await apiG(`/vulnerabilidades/${id}/validar`, { method: 'PUT', body: '{}' });
+        mostrarToast('Vulnerabilidade validada.', 'sucesso'); carregarDadosProtegidos();
     });
-
-    mostrarToast(
-        `Vulnerabilidade #${id} validada!`,
-        'sucesso'
-    );
-
-    carregarVulnerabilidades();
 }
 
 async function acionarCircuitBreaker(id) {
-
-    const confirmar = confirm(
-        "ALERTA CRÍTICO: deseja isolar esta ameaça?"
-    );
-
-    if (!confirmar) return;
-
-    await fetch(`${API_URL}/circuit-breaker/${id}`, {
-        method: 'POST',
-        headers: getAuthHeaders()
+    if (!confirm('Registrar este achado como isolado? Esta ação não executa bloqueio de rede.')) return;
+    await tentarG(async () => {
+        await apiG(`/circuit-breaker/${id}`, { method: 'POST', body: '{}' });
+        mostrarToast('Status de isolamento registrado.', 'sucesso'); carregarDadosProtegidos();
     });
-
-    mostrarToast(
-        `Circuit Breaker acionado!`,
-        'critico'
-    );
-
-    carregarVulnerabilidades();
 }
 
 async function carregarInsightsIA() {
@@ -734,7 +724,7 @@ async function carregarOrigens() {
 }
 
 function voltarPadrao() {
-    carregarVulnerabilidades('/vulnerabilidades');
+    limparFiltrosG();
 }
 
 // ─────────────────────────────────────────────
@@ -1374,7 +1364,7 @@ async function iniciarScan(tipo) {
 
     _scanner.rodando = true;
     fecharResultadoScan();
-    mostrarLoadingScan(`Executando scan ${tipo.toUpperCase()} com IA...`);
+    mostrarLoadingScan(`Enviando scan ${tipo.toUpperCase()}...`);
 
     try {
         let dados;
@@ -1416,6 +1406,8 @@ async function executarScannerSCA(arquivo) {
     }
     const form = new FormData();
     form.append('arquivo', arquivo);
+    form.append('segundo_plano', '1');
+    form.append('alvo', document.getElementById('scan-projeto').value.trim());
 
     const res = await fetch(`${API_URL}/scanner/analisar`, {
         method: 'POST',
@@ -1437,6 +1429,8 @@ async function executarScannerSAST(arquivo) {
     }
     const form = new FormData();
     form.append('arquivo', arquivo);
+    form.append('segundo_plano', '1');
+    form.append('alvo', document.getElementById('scan-projeto').value.trim());
 
     const res = await fetch(`${API_URL}/scanner/analisar-codigo`, {
         method: 'POST',
@@ -1460,7 +1454,7 @@ async function executarScannerDAST(url) {
         method: 'POST',
         headers: getAuthHeaders(),
         credentials: 'same-origin',
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url, segundo_plano: true })
     });
     return tratarRespostaScan(res, 'DAST');
 }
@@ -1500,6 +1494,11 @@ async function tratarRespostaScan(res, nomeTipo) {
         return null;
     }
 
+    if (res.status === 202) {
+        mostrarToast(`Scan #${json.scan_id} enviado. Acompanhe no histórico.`, 'sucesso');
+        gestaoEstado.pagina = 1; await carregarScansG(); agendarGestaoG();
+        return null;
+    }
     return json;
 }
 
@@ -1612,7 +1611,7 @@ function renderizarResultadoScanner(dados, tipo) {
 
                 const metas = [cvss, sla, vulnId ? `ID: ${vulnId}` : '', `Origem: ${origem}`]
                     .filter(Boolean)
-                    .map(m => `<span>${m}</span>`).join('');
+                    .map(m => `<span>${escaparHtml(m)}</span>`).join('');
 
                 const delay = idx * 60;
 
@@ -1620,11 +1619,11 @@ function renderizarResultadoScanner(dados, tipo) {
                     <div class="resultado-vuln-item" style="animation-delay:${delay}ms;">
                         <div class="resultado-vuln-gravidade ${gravClasse}"></div>
                         <div class="resultado-vuln-info">
-                            <div class="resultado-vuln-nome">${v.nome || v.cve_id || '—'}</div>
+                            <div class="resultado-vuln-nome">${escaparHtml(v.nome || v.cve_id || '—')}</div>
                             <div class="resultado-vuln-meta">${metas}</div>
                         </div>
                         <span class="badge-prioridade ${gravClasse === 'critica' ? 'badge-critica' : gravClasse === 'alta' ? 'badge-alta' : 'badge-moderada'}">
-                            <span class="badge-dot"></span>${v.gravidade || '—'}
+                            <span class="badge-dot"></span>${escaparHtml(v.gravidade || '—')}
                         </span>
                     </div>
                 `;

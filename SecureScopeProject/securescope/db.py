@@ -10,6 +10,7 @@
 import os
 import re
 import sqlite3
+import threading
 from pathlib import Path
 import psycopg2
 import psycopg2.extras
@@ -18,6 +19,7 @@ import psycopg2.pool
 _pool = None
 _use_sqlite = False
 _sqlite_conn = None
+_init_lock = threading.RLock()
 
 
 def _is_production():
@@ -92,8 +94,7 @@ class SQLiteConnection:
         self._conn.rollback()
 
     def close(self):
-        # Mantém conexão SQLite aberta entre chamadas para evitar reconectar a cada request
-        pass
+        self._conn.close()
 
 
 def _init_db():
@@ -146,6 +147,7 @@ def _init_db():
         raw_conn = sqlite3.connect(str(db_path), check_same_thread=False)
         raw_conn.row_factory = sqlite3.Row
         raw_conn.execute("PRAGMA foreign_keys = ON")
+        raw_conn.execute("PRAGMA journal_mode = WAL")
         _sqlite_conn = SQLiteConnection(raw_conn)
         print(f"[db] Banco SQLite local conectado com sucesso ({db_path.name}).")
 
@@ -185,6 +187,7 @@ class PGConnection:
 
     def close(self):
         if self._pool is not None:
+            self._conn.rollback()  # encerra inclusive transações apenas de leitura
             self._pool.putconn(self._conn)
         else:
             self._conn.close()
@@ -192,10 +195,17 @@ class PGConnection:
 
 def get_db_connection():
     """Ponto único de conexão usado por app.py e banco.py."""
-    _init_db()
+    with _init_lock:
+        _init_db()
 
     if _use_sqlite:
-        return _sqlite_conn
+        # Cada requisição/worker possui sua transação; nunca compartilhar
+        # uma conexão entre threads durante commit/rollback.
+        path = _sqlite_conn._conn.execute("PRAGMA database_list").fetchone()[2]
+        raw = sqlite3.connect(path, timeout=30)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        return SQLiteConnection(raw)
 
     raw_conn = _pool.getconn()
     return PGConnection(raw_conn, _pool)

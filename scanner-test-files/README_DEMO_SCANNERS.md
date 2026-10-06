@@ -5,12 +5,12 @@ a gravação do vídeo compreensível.
 
 ## SAST — um achado esperado
 
-Envie `demo_sast_enxuto.py` na aba SAST. O Bandit deve apontar somente o uso de
+Envie `SAST.py` na aba SAST. O Bandit deve apontar somente o uso de
 MD5 (`B324`). O arquivo é analisado como texto e nunca é executado.
 
 ## SCA — poucos achados esperados
 
-Envie `requirements_sca_demo.txt` na aba SCA. A versão escolhida do Flask tinha
+Envie `SCA.txt` na aba SCA. A versão escolhida do Flask tinha
 dois registros na OSV em 24/08/2026. Como a OSV é atualizada continuamente, a
 quantidade pode mudar no futuro.
 

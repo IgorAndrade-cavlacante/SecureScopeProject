@@ -671,19 +671,22 @@ def _salvar_arquivos_temp(arquivos: list[dict]) -> str:
     (via shutil.rmtree) — independentemente de sucesso ou erro.
 
     Garante:
-    - Nomes de arquivo são sanitizados (apenas basename, sem path traversal).
+    - Caminhos relativos são preservados e validados contra path traversal.
     - Apenas arquivos .py são gravados.
     - O conteúdo é escrito em disco mas NUNCA importado ou executado.
     """
     dir_temp = tempfile.mkdtemp(prefix="securescope_sast_")
 
     for arq in arquivos:
-        # Sanitiza o nome: pega apenas o basename para evitar path traversal
-        nome_seguro = Path(arq["nome"]).name
+        nome_seguro = str(arq["nome"]).replace('\\', '/')
+        partes = nome_seguro.split('/')
+        if nome_seguro.startswith('/') or ':' in nome_seguro or any(p in ('', '.', '..') for p in partes):
+            continue
         if not nome_seguro.endswith(".py"):
             continue  # Ignora silenciosamente arquivos não-Python
 
-        caminho = Path(dir_temp) / nome_seguro
+        caminho = Path(dir_temp).joinpath(*partes)
+        caminho.parent.mkdir(parents=True, exist_ok=True)
         caminho.write_bytes(arq["conteudo"])
 
     return dir_temp
@@ -941,11 +944,19 @@ def executar_sast_zip(conteudo_zip: bytes) -> dict:
                 )
                 return resultado
 
+            if len(membros_py) > 200 or sum(m.file_size for m in membros_py) > 50 * 1024 * 1024:
+                resultado["erro"] = "ZIP excede o limite de 200 arquivos Python ou 50 MB descompactados."
+                return resultado
+            nomes = [m.filename.replace('\\', '/').casefold() for m in membros_py]
+            if len(nomes) != len(set(nomes)):
+                resultado["erro"] = "ZIP contém caminhos de arquivos duplicados."
+                return resultado
+
             # Monta lista de arquivos para gravação temporária
             arquivos = []
             for m in membros_py:
                 arquivos.append({
-                    "nome": Path(m.filename).name,  # Só o basename
+                    "nome": m.filename,  # preserva subpastas para identidade dos achados
                     "conteudo": zf.read(m.filename),
                 })
 
@@ -1305,6 +1316,9 @@ def processar_achados_zap(
             "_gravidade_texto": risco["texto"],
             "_descricao":       descricao,
             "_solucao":         solucao,
+            "_titulo":         nome_alerta,
+            "_plugin_id":      str(a.get("pluginId") or a.get("pluginid") or ""),
+            "_parametro":      str(a.get("param") or ""),
             "_cwe_id":          str(cwe_id),
             "_evidencia":       evidencia,
             "_confianca":       conf_str,

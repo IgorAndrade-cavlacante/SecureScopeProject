@@ -10,6 +10,10 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      # Uma instância web / um worker Gunicorn: processa a fila persistente
+      # em processos filhos sem bloquear as requisições do painel.
+      - key: SCAN_WORKER_EMBUTIDO
+        value: "1"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
