@@ -1,31 +1,15 @@
 # Integrantes do grupo — SecureScope
 
-Preencha os campos abaixo. Adicione ou remova linhas conforme o tamanho do grupo.
 
-**Instituição:** [preencher]
+**Instituição:** [FIAP]
 
-**Curso:** [preencher]
+**Curso:** [Defesa Cibernética]
 
-**Disciplina:** [preencher]
 
-**Turma / semestre:** [preencher]
+| Nº | Nome completo | RM
+| --- | --- | --- |
+| 1 | [Gabriel Laino] | [568718] 
+| 2 | [Igor Andrade] | [570084] 
+| 3 | [Victoria de Paula] | [57083] 
+| 4 | [Eduardo Estevam] | [570186]  
 
-**Professor(a) / orientador(a):** [preencher]
-
-| Nº | Nome completo | Matrícula / RA (opcional) | Responsabilidades e contribuições |
-| --- | --- | --- | --- |
-| 1 | [preencher] | [preencher] | [preencher] |
-| 2 | [preencher] | [preencher] | [preencher] |
-| 3 | [preencher] | [preencher] | [preencher] |
-| 4 | [preencher] | [preencher] | [preencher] |
-| 5 | [preencher] | [preencher] | [preencher] |
-
-## Apresentação
-
-**Título do trabalho:** SecureScope — análise e priorização de vulnerabilidades
-
-**Data de entrega:** [preencher]
-
-**Repositório:** [preencher]
-
-**Link da demonstração (opcional):** [preencher]
