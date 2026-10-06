@@ -160,7 +160,7 @@ Faça backup do banco antes de atualizar a aplicação: a inicialização pode a
 
 ## 13. Grupo e licença
 
-Preencha os nomes e contribuições em [INTEGRANTES.md](../INTEGRANTES.md). A licença adotada é [BSD-3-Clause](../LICENSE).
+Preencha os nomes e contribuições em [INTEGRANTES.md](../INTEGRANTES.md). A licença adotada é [BSD-3-Clause](../LICENSE.MD).
 
 
 ## 14. Filtrar e exportar

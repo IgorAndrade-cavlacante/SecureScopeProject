@@ -6,7 +6,7 @@ Ferramenta web para registrar, analisar e priorizar vulnerabilidades de seguran�
 
 - [Passo a passo de instalação e uso](docs/GUIA_DE_USO.md)
 - [Integrantes do grupo — preencher aqui](INTEGRANTES.md)
-- [Licença BSD de 3 cláusulas](LICENSE)
+- [Licença BSD de 3 cláusulas](LICENSE.MD)
 
 ## Funcionalidades atuais
 
@@ -43,4 +43,4 @@ Siga o [guia de uso](docs/GUIA_DE_USO.md). Para desenvolvimento local, é possí
 
 ## Licença
 
-O código original deste projeto é disponibilizado sob **BSD-3-Clause**, conforme o arquivo [LICENSE](LICENSE), usando o [texto de referência da Open Source Initiative](https://opensource.org/license/bsd-3-clause). Dependências e materiais de terceiros permanecem sujeitos às respectivas licenças.
+O código original deste projeto é disponibilizado sob **BSD-3-Clause**, conforme o arquivo [LICENSE.MD](LICENSE.MD), usando o [texto de referência da Open Source Initiative](https://opensource.org/license/bsd-3-clause). Dependências e materiais de terceiros permanecem sujeitos às respectivas licenças.
